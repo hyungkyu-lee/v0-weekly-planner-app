@@ -40,9 +40,88 @@ const TASK_COLORS = [
   { name: "라벤더", value: "#c4b5fd" },
   { name: "피치", value: "#fda4af" },
   { name: "옐로", value: "#fde047" },
+  { name: "그레이", value: "#d4d4d8" },
+  { name: "오렌지", value: "#fdba74" },
+  { name: "남색", value: "#93b3fd" },
 ]
 
 const DAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"]
+
+function TimePicker({
+  value,
+  onChange,
+  label,
+}: {
+  value: string
+  onChange: (time: string) => void
+  label: string
+}) {
+  const parseTime = (timeStr: string) => {
+    const [hours, minutes] = timeStr.split(":").map(Number)
+    const isPM = hours >= 12
+    const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+    return { hour: displayHour, minute: minutes, isPM }
+  }
+
+  const { hour, minute, isPM } = parseTime(value)
+
+  const toggleAmPm = () => {
+    const [hours, minutes] = value.split(":").map(Number)
+    const newHours = isPM ? (hours === 12 ? 0 : hours - 12) : hours === 12 ? 12 : hours + 12
+    onChange(`${String(newHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`)
+  }
+
+  const handleHourScroll = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const [hours, minutes] = value.split(":").map(Number)
+    const delta = e.deltaY > 0 ? -1 : 1
+    let newHour = hour + delta
+    if (newHour < 1) newHour = 12
+    if (newHour > 12) newHour = 1
+
+    const actualHour = isPM ? (newHour === 12 ? 12 : newHour + 12) : newHour === 12 ? 0 : newHour
+    onChange(`${String(actualHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`)
+  }
+
+  const handleMinuteScroll = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const [hours, minutes] = value.split(":").map(Number)
+    const delta = e.deltaY > 0 ? -5 : 5
+    let newMinute = minutes + delta
+    if (newMinute < 0) newMinute = 55
+    if (newMinute > 59) newMinute = 0
+
+    onChange(`${String(hours).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`)
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-sm text-zinc-500">{label}</Label>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleAmPm}
+          className="px-3 py-2 border border-zinc-200 rounded-lg bg-white hover:bg-zinc-50 transition-colors text-sm font-medium min-w-[60px]"
+        >
+          {isPM ? "오후" : "오전"}
+        </button>
+        <div
+          className="flex items-center gap-1 px-3 py-2 border border-zinc-200 rounded-lg bg-white cursor-pointer select-none hover:bg-zinc-50"
+          onWheel={handleHourScroll}
+        >
+          <span className="text-base font-medium w-6 text-center">{String(hour).padStart(2, "0")}</span>
+        </div>
+        <span className="text-zinc-400">:</span>
+        <div
+          className="flex items-center gap-1 px-3 py-2 border border-zinc-200 rounded-lg bg-white cursor-pointer select-none hover:bg-zinc-50"
+          onWheel={handleMinuteScroll}
+        >
+          <span className="text-base font-medium w-6 text-center">{String(minute).padStart(2, "0")}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function AddTaskDialog({
   open,
@@ -98,13 +177,42 @@ export function AddTaskDialog({
     }
   }, [open, initialDate, initialTime])
 
+  const handleStartTimeChange = (newStartTime: string) => {
+    setFormData((prev) => {
+      const [startHours] = newStartTime.split(":").map(Number)
+      const [endHours, endMinutes] = prev.endTime.split(":").map(Number)
+
+      if (startHours >= 12 && endHours < 12) {
+        const newEndHours = endHours === 0 ? 12 : endHours + 12
+        return {
+          ...prev,
+          startTime: newStartTime,
+          endTime: `${String(newEndHours).padStart(2, "0")}:${String(endMinutes).padStart(2, "0")}`,
+        }
+      }
+
+      return { ...prev, startTime: newStartTime }
+    })
+  }
+
   const getDisplayDateTime = () => {
     const date = formData.startDate
-    const dayOfWeek = format(date, "EEE", { locale: ko })
+    const dayOfWeek = format(date, "EEEE", { locale: ko })
     const dateStr = format(date, "M월 d일")
-    const startTime = formData.startTime
-    const endTime = formData.endTime
-    return `${dateStr} (${dayOfWeek}) ${startTime} - ${endTime}`
+    return isRepeat ? dateStr : `${dateStr} ${dayOfWeek}`
+  }
+
+  const handleDateScroll = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const delta = e.deltaY > 0 ? -1 : 1
+    const newDate = addDays(formData.startDate, delta)
+
+    if (newDate >= today) {
+      setFormData((prev) => ({ ...prev, startDate: newDate }))
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -120,7 +228,6 @@ export function AddTaskDialog({
       }
 
       const groupId = crypto.randomUUID()
-      console.log("[v0] Creating recurring tasks with group_id:", groupId)
 
       const datesToProcess = formData.repeatDays.map((dayOffset) => addDays(formData.startDate, dayOffset))
 
@@ -226,13 +333,13 @@ export function AddTaskDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="rounded-2xl max-w-md">
-          <DialogHeader>{getDisplayDateTime()}</DialogHeader>
+          <DialogHeader className="text-lg font-semibold text-center">{getDisplayDateTime()}</DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Input
                   ref={titleInputRef}
-                  placeholder="제목"
+                  placeholder="일정 제목"
                   value={formData.title}
                   onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
                   className="rounded-lg border-zinc-200 text-base"
@@ -268,60 +375,50 @@ export function AddTaskDialog({
                   </div>
                 </div>
               ) : (
-                /* Case B: Repeat OFF - show date picker and "Mark as Event" checkbox */
                 <>
                   <div className="space-y-2">
                     <Label className="text-sm text-zinc-500">날짜</Label>
-                    <Input
-                      type="date"
-                      value={format(formData.startDate, "yyyy-MM-dd")}
-                      onChange={(e) => {
-                        const newDate = new Date(e.target.value)
-                        setFormData((prev) => ({ ...prev, startDate: newDate }))
-                      }}
-                      className="rounded-lg border-zinc-200"
-                      required
-                    />
+                    <div className="relative cursor-pointer" onWheel={handleDateScroll}>
+                      <Input
+                        type="date"
+                        value={format(formData.startDate, "yyyy-MM-dd")}
+                        onChange={(e) => {
+                          const newDate = new Date(e.target.value)
+                          setFormData((prev) => ({ ...prev, startDate: newDate }))
+                        }}
+                        className="rounded-lg border-zinc-200 pr-16"
+                        required
+                      />
+                      <div className="absolute right-10 top-1/2 -translate-y-1/2 text-sm text-zinc-500 pointer-events-none">
+                        ({format(formData.startDate, "EEE", { locale: ko })})
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center justify-between py-1">
+                    <Label htmlFor="mark-event" className="text-sm font-medium">
+                      중요 일정 표시
+                    </Label>
                     <Checkbox
                       id="mark-event"
                       checked={markAsEvent}
                       onCheckedChange={(checked) => setMarkAsEvent(checked === true)}
                     />
-                    <Label htmlFor="mark-event" className="text-sm font-medium cursor-pointer">
-                      중요 일정으로 표시 (이벤트)
-                    </Label>
                   </div>
                 </>
               )}
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label className="text-sm text-zinc-500">시작</Label>
-                  <Input
-                    type="time"
-                    value={formData.startTime}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, startTime: e.target.value }))}
-                    className="rounded-lg border-zinc-200"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm text-zinc-500">종료</Label>
-                  <Input
-                    type="time"
-                    value={formData.endTime}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, endTime: e.target.value }))}
-                    className="rounded-lg border-zinc-200"
-                    required
-                  />
-                </div>
+                <TimePicker value={formData.startTime} onChange={handleStartTimeChange} label="시작 시간" />
+                <TimePicker
+                  value={formData.endTime}
+                  onChange={(time) => setFormData((prev) => ({ ...prev, endTime: time }))}
+                  label="종료 시간"
+                />
               </div>
 
               <div className="space-y-2">
                 <Label className="text-sm text-zinc-500">색상</Label>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   {TASK_COLORS.map((color) => (
                     <button
                       key={color.value}
@@ -331,14 +428,16 @@ export function AddTaskDialog({
                         selectedColor === color.value ? "ring-2 ring-zinc-900 ring-offset-2" : ""
                       }`}
                       style={{ backgroundColor: color.value }}
+                      aria-label={color.name}
                     />
                   ))}
                 </div>
               </div>
 
               <div className="space-y-2">
+                <Label className="text-sm text-zinc-500">메모</Label>
                 <Textarea
-                  placeholder="메모"
+                  placeholder="메모를 입력하세요"
                   value={formData.memo}
                   onChange={(e) => setFormData((prev) => ({ ...prev, memo: e.target.value }))}
                   className="rounded-lg resize-none border-zinc-200"
@@ -356,7 +455,11 @@ export function AddTaskDialog({
               >
                 취소
               </Button>
-              <Button type="submit" className="rounded-lg bg-zinc-900 hover:bg-zinc-800">
+              <Button
+                type="submit"
+                disabled={!formData.title.trim()}
+                className="rounded-lg bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 추가
               </Button>
             </DialogFooter>
