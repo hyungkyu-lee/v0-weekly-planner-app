@@ -8,6 +8,7 @@ import { ko } from "date-fns/locale"
 import { useState, useEffect } from "react"
 import { TaskCard } from "./task-card"
 import { AddTaskDialog } from "./add-task-dialog"
+import { TaskViewerDialog } from "./task-viewer-dialog"
 import { MonthlyView } from "./monthly-view"
 import { Button } from "./ui/button"
 import { ChevronLeft, ChevronRight, Plus, Settings, LogOut } from "lucide-react"
@@ -83,6 +84,10 @@ export function WeeklyPlanner({
     currentTime: null,
   })
 
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [viewingTask, setViewingTask] = useState<Task | null>(null)
+  const [editMode, setEditMode] = useState<"single" | "all">("single")
+
   useEffect(() => {
     return () => {
       if (scrollTimeout) {
@@ -108,14 +113,24 @@ export function WeeklyPlanner({
 
   const HOUR_HEIGHT = 27
 
+  const getNextGlobalAnchor = (currentMinutes: number, globalInterval: number): number => {
+    // Calculate the next global anchor point
+    // Global anchors are aligned to the start hour (e.g., 8:00, 8:30, 9:00 for 30min intervals)
+    const startMinutes = weekSettings.startHour * 60
+    const minutesSinceStart = currentMinutes - startMinutes
+    const intervalsFromStart = Math.ceil(minutesSinceStart / globalInterval)
+    return startMinutes + intervalsFromStart * globalInterval
+  }
+
   const generateTimeSlots = (): TimeSlot[] => {
     const slots: TimeSlot[] = []
     let cursor = weekSettings.startHour * 60
     const endMinutes = (weekSettings.endHour + 1) * 60
 
     while (cursor < endMinutes) {
-      let step = weekSettings.globalInterval
+      let nextStepSize = 0
 
+      // Step A: Determine the logic for the current slot
       const activeRule = weekSettings.exceptionRules.find((rule) => {
         const [ruleStartHour, ruleStartMin] = rule.startTime.split(":").map(Number)
         const [ruleEndHour, ruleEndMin] = rule.endTime.split(":").map(Number)
@@ -125,27 +140,49 @@ export function WeeklyPlanner({
       })
 
       if (activeRule) {
+        // [CASE 1] Inside an Exception Rule
+        // Use the rule's interval, but DO NOT exceed the rule's end time
+        const [ruleEndHour, ruleEndMin] = activeRule.endTime.split(":").map(Number)
+        const ruleEndMinutes = ruleEndHour * 60 + ruleEndMin
+        const remainingInRule = ruleEndMinutes - cursor
+
         if (activeRule.interval === 0) {
-          const [ruleEndHour, ruleEndMin] = activeRule.endTime.split(":").map(Number)
-          const ruleEndMinutes = ruleEndHour * 60 + ruleEndMin
-          step = ruleEndMinutes - cursor
+          // "No Split" mode: use the entire remaining time as one slot
+          nextStepSize = remainingInRule
         } else {
-          step = activeRule.interval
+          // Use the rule's interval, but don't exceed the rule's end
+          nextStepSize = Math.min(activeRule.interval, remainingInRule)
+        }
+      } else {
+        // [CASE 2] Global Interval Mode (The Bridging Logic)
+        // We are back to normal mode, but might be at an awkward time (e.g., 08:40)
+        // Find the Next Global Anchor
+        const nextAnchor = getNextGlobalAnchor(cursor, weekSettings.globalInterval)
+
+        // Calculate distance to that anchor
+        const distanceToAnchor = nextAnchor - cursor
+
+        // Check if there's an upcoming exception rule that starts before the next anchor
+        const upcomingRule = weekSettings.exceptionRules.find((rule) => {
+          const [ruleStartHour, ruleStartMin] = rule.startTime.split(":").map(Number)
+          const ruleStartMinutes = ruleStartHour * 60 + ruleStartMin
+          return ruleStartMinutes > cursor && ruleStartMinutes < nextAnchor
+        })
+
+        if (upcomingRule) {
+          // If there's an upcoming rule, bridge to its start
+          const [upcomingStartHour, upcomingStartMin] = upcomingRule.startTime.split(":").map(Number)
+          const upcomingStartMinutes = upcomingStartHour * 60 + upcomingStartMin
+          nextStepSize = upcomingStartMinutes - cursor
+        } else {
+          // DECISION: Bridge the gap to the next global anchor
+          // If distance is smaller than Global Interval, use the distance to "Bridge the Gap"
+          // Otherwise, use the Global Interval
+          nextStepSize = Math.min(weekSettings.globalInterval, distanceToAnchor)
         }
       }
 
-      const upcomingRule = weekSettings.exceptionRules.find((rule) => {
-        const [ruleStartHour, ruleStartMin] = rule.startTime.split(":").map(Number)
-        const ruleStartMinutes = ruleStartHour * 60 + ruleStartMin
-        return ruleStartMinutes > cursor && ruleStartMinutes < cursor + step
-      })
-
-      if (upcomingRule) {
-        const [upcomingStartHour, upcomingStartMin] = upcomingRule.startTime.split(":").map(Number)
-        const upcomingStartMinutes = upcomingStartHour * 60 + upcomingStartMin
-        step = upcomingStartMinutes - cursor
-      }
-
+      // Step B: Render Row & Advance
       const currentHour = Math.floor(cursor / 60)
       const currentMin = cursor % 60
       const currentTime = `${currentHour.toString().padStart(2, "0")}:${currentMin.toString().padStart(2, "0")}`
@@ -154,10 +191,10 @@ export function WeeklyPlanner({
       slots.push({
         time: currentTime,
         height: slotHeight,
-        interval: step,
+        interval: nextStepSize,
       })
 
-      cursor += step
+      cursor += nextStepSize
     }
 
     return slots
@@ -299,8 +336,14 @@ export function WeeklyPlanner({
   }
 
   const goToToday = () => {
-    setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))
-    setCurrentMonth(startOfMonth(new Date()))
+    const today = new Date()
+    // For 7-day week, put today at index 3 (middle column)
+    const daysToSubtract = 3
+    const centeredStart = new Date(today)
+    centeredStart.setDate(today.getDate() - daysToSubtract)
+    const todayWeekStart = startOfWeek(centeredStart, { weekStartsOn: 1 })
+    setCurrentWeekStart(todayWeekStart)
+    setCurrentMonth(startOfMonth(today))
   }
 
   const handleDayClick = (date: Date) => {
@@ -349,8 +392,18 @@ export function WeeklyPlanner({
 
   const SIDEBAR_WIDTH = "96px"
 
+  const handleTaskClick = (task: Task) => {
+    setViewingTask(task)
+  }
+
+  const handleEditFromViewer = (task: Task, mode: "single" | "all") => {
+    setViewingTask(null)
+    setEditingTask(task)
+    setEditMode(mode)
+  }
+
   return (
-    <div className="relative h-full overflow-hidden bg-zinc-50">
+    <div className="h-screen flex flex-col">
       <div className="h-14 border-b border-zinc-200 flex items-center justify-between px-4">
         {/* Left Group */}
         <div className="flex items-center gap-2">
@@ -560,6 +613,8 @@ export function WeeklyPlanner({
                               onUpdate={onTaskUpdate}
                               onDelete={onTaskDelete}
                               onDeleteRecurringGroup={onDeleteRecurringGroup}
+                              taskHeight={height}
+                              onClick={handleTaskClick} // Pass edit handler
                             />
                           </div>
                         )
@@ -572,16 +627,32 @@ export function WeeklyPlanner({
         </div>
       )}
 
-      {selectedSlot && (
-        <AddTaskDialog
-          open={!!selectedSlot}
-          onOpenChange={(open) => !open && setSelectedSlot(null)}
-          initialDate={selectedSlot.date}
-          initialTime={selectedSlot.time}
-          existingTasks={tasks}
-          onTaskAdd={onTaskAdd}
-        />
-      )}
+      <TaskViewerDialog
+        open={!!viewingTask}
+        onOpenChange={(open) => {
+          if (!open) setViewingTask(null)
+        }}
+        task={viewingTask}
+        onEdit={handleEditFromViewer}
+      />
+
+      <AddTaskDialog
+        open={!!selectedSlot || !!editingTask}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedSlot(null)
+            setEditingTask(null)
+            setEditMode("single")
+          }
+        }}
+        initialDate={selectedSlot?.date || new Date()}
+        initialTime={selectedSlot?.time || "09:00"}
+        existingTasks={tasks}
+        onTaskAdd={onTaskAdd}
+        editingTask={editingTask}
+        editMode={editMode}
+        onTaskUpdate={onTaskUpdate}
+      />
 
       <WeekSettingsDialog
         open={showSettingsDialog}

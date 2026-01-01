@@ -3,7 +3,7 @@
 import type React from "react"
 import type { Task, TaskFormData } from "@/lib/types"
 import { checkTaskOverlap } from "@/lib/utils/task-utils"
-import { format, parse, addDays, startOfDay, isBefore } from "date-fns"
+import { format, parse, addDays, startOfDay, isBefore, parseISO } from "date-fns"
 import { ko } from "date-fns/locale"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "./ui/button"
@@ -32,6 +32,9 @@ interface AddTaskDialogProps {
   initialTime: string
   existingTasks: Task[]
   onTaskAdd: (task: Omit<Task, "id" | "created_at" | "updated_at">) => Promise<void>
+  editingTask?: Task | null
+  editMode?: "single" | "all"
+  onTaskUpdate?: (task: Task, updateMode: "single" | "all") => Promise<void>
 }
 
 const TASK_COLORS = [
@@ -98,6 +101,7 @@ function TimePicker({
     const [hours, minutes] = value.split(":").map(Number)
     let newMinute = minutes - 10
     if (newMinute < 0) newMinute = 50
+    if (newMinute > 59) newMinute = 0
     onChange(`${String(hours).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`)
   }
 
@@ -356,6 +360,9 @@ export function AddTaskDialog({
   initialTime,
   existingTasks,
   onTaskAdd,
+  editingTask,
+  editMode = "single",
+  onTaskUpdate,
 }: AddTaskDialogProps) {
   const { user } = useAuth()
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -376,6 +383,46 @@ export function AddTaskDialog({
   const [markAsEvent, setMarkAsEvent] = useState(false)
   const [conflictTask, setConflictTask] = useState<Task | null>(null)
   const [pendingTasks, setPendingTasks] = useState<Omit<Task, "id" | "created_at" | "updated_at">[]>([])
+  const [updateMode, setUpdateMode] = useState<"single" | "all">("single")
+
+  useEffect(() => {
+    if (open) {
+      if (editingTask) {
+        const startTime = format(parseISO(editingTask.start_time), "HH:mm")
+        const endTime = format(parseISO(editingTask.end_time), "HH:mm")
+
+        setFormData({
+          title: editingTask.title,
+          startDate: parseISO(editingTask.start_time),
+          startTime: startTime,
+          endTime: endTime,
+          memo: editingTask.memo || "",
+          taskType: editingTask.task_type || "task",
+          eventDate: editingTask.event_date ? parseISO(editingTask.event_date) : parseISO(editingTask.start_time),
+          repeatDays: editingTask.repeat_days || [],
+          skipHolidays: false,
+        })
+        setIsRepeat(editingTask.task_type === "routine")
+        setMarkAsEvent(editingTask.is_important || false)
+        setSelectedColor(editingTask.color)
+      } else {
+        setFormData({
+          title: "",
+          startDate: initialDate,
+          startTime: initialTime,
+          endTime: format(parse(initialTime, "HH:mm", new Date()).getTime() + 60 * 60 * 1000, "HH:mm"),
+          memo: "",
+          taskType: "task",
+          eventDate: initialDate,
+          repeatDays: [],
+          skipHolidays: false,
+        })
+        setIsRepeat(false)
+        setMarkAsEvent(false)
+        setSelectedColor(TASK_COLORS[0].value)
+      }
+    }
+  }, [open, initialDate, initialTime, editingTask])
 
   useEffect(() => {
     if (open && titleInputRef.current) {
@@ -384,25 +431,6 @@ export function AddTaskDialog({
       }, 100)
     }
   }, [open])
-
-  useEffect(() => {
-    if (open) {
-      setFormData({
-        title: "",
-        startDate: initialDate,
-        startTime: initialTime,
-        endTime: format(parse(initialTime, "HH:mm", new Date()).getTime() + 60 * 60 * 1000, "HH:mm"),
-        memo: "",
-        taskType: "task",
-        eventDate: initialDate,
-        repeatDays: [],
-        skipHolidays: false,
-      })
-      setIsRepeat(false)
-      setMarkAsEvent(false)
-      setSelectedColor(TASK_COLORS[0].value)
-    }
-  }, [open, initialDate, initialTime])
 
   const handleStartTimeChange = (newStartTime: string) => {
     setFormData((prev) => {
@@ -481,19 +509,73 @@ export function AddTaskDialog({
 
     const tasksToAdd: Omit<Task, "id" | "created_at" | "updated_at">[] = []
 
-    if (isRepeat) {
-      if (formData.repeatDays.length === 0) {
-        alert("반복할 요일을 선택해주세요.")
-        return
+    if (editingTask && onTaskUpdate) {
+      const startDateTime = new Date(formData.startDate)
+      const [startHour, startMinute] = formData.startTime.split(":").map(Number)
+      startDateTime.setHours(startHour, startMinute, 0, 0)
+
+      const endDateTime = new Date(formData.startDate)
+      const [endHour, endMinute] = formData.endTime.split(":").map(Number)
+      endDateTime.setHours(endHour, endMinute, 0, 0)
+
+      const updatedTask: Task = {
+        ...editingTask,
+        title: formData.title,
+        start_time: startDateTime.toISOString(),
+        end_time: endDateTime.toISOString(),
+        memo: formData.memo,
+        color: selectedColor,
+        is_important: markAsEvent,
+        task_type: isRepeat ? "routine" : "task",
+        event_date: markAsEvent ? formData.eventDate.toISOString() : null,
+        repeat_days: isRepeat ? formData.repeatDays : null,
+        updated_at: new Date().toISOString(),
       }
 
-      const groupId = crypto.randomUUID()
+      await onTaskUpdate(updatedTask, updateMode)
+      onOpenChange(false)
+      resetForm()
+    } else {
+      // Add mode (existing logic)
+      if (isRepeat) {
+        if (formData.repeatDays.length === 0) {
+          alert("반복할 요일을 선택해주세요.")
+          return
+        }
 
-      const datesToProcess = formData.repeatDays.map((dayOffset) => addDays(formData.startDate, dayOffset))
+        const groupId = crypto.randomUUID()
 
-      for (const date of datesToProcess) {
-        const startTime = parse(formData.startTime, "HH:mm", date)
-        const endTime = parse(formData.endTime, "HH:mm", date)
+        const datesToProcess = formData.repeatDays.map((dayOffset) => addDays(formData.startDate, dayOffset))
+
+        for (const date of datesToProcess) {
+          const startTime = parse(formData.startTime, "HH:mm", date)
+          const endTime = parse(formData.endTime, "HH:mm", date)
+
+          const newTask = {
+            user_id: user.id,
+            title: formData.title,
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(),
+            is_done: false,
+            memo: formData.memo || null,
+            color: selectedColor,
+            task_type: "routine" as const,
+            repeat_days: formData.repeatDays,
+            group_id: groupId,
+          }
+
+          const overlap = checkTaskOverlap(newTask, existingTasks)
+          if (overlap) {
+            setConflictTask(overlap)
+            setPendingTasks([newTask])
+            return
+          }
+
+          tasksToAdd.push(newTask)
+        }
+      } else {
+        const startTime = parse(formData.startTime, "HH:mm", formData.startDate)
+        const endTime = parse(formData.endTime, "HH:mm", formData.startDate)
 
         const newTask = {
           user_id: user.id,
@@ -503,9 +585,7 @@ export function AddTaskDialog({
           is_done: false,
           memo: formData.memo || null,
           color: selectedColor,
-          task_type: "routine" as const,
-          repeat_days: formData.repeatDays,
-          group_id: groupId,
+          task_type: (markAsEvent ? "event" : "task") as const,
         }
 
         const overlap = checkTaskOverlap(newTask, existingTasks)
@@ -517,29 +597,6 @@ export function AddTaskDialog({
 
         tasksToAdd.push(newTask)
       }
-    } else {
-      const startTime = parse(formData.startTime, "HH:mm", formData.startDate)
-      const endTime = parse(formData.endTime, "HH:mm", formData.startDate)
-
-      const newTask = {
-        user_id: user.id,
-        title: formData.title,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        is_done: false,
-        memo: formData.memo || null,
-        color: selectedColor,
-        task_type: (markAsEvent ? "event" : "task") as const,
-      }
-
-      const overlap = checkTaskOverlap(newTask, existingTasks)
-      if (overlap) {
-        setConflictTask(overlap)
-        setPendingTasks([newTask])
-        return
-      }
-
-      tasksToAdd.push(newTask)
     }
 
     for (const task of tasksToAdd) {
@@ -553,8 +610,9 @@ export function AddTaskDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="rounded-2xl max-w-md">
-          <form onSubmit={handleSubmit}>
+        <DialogContent className="sm:max-w-[500px] rounded-2xl max-h-[90vh] overflow-y-auto">
+          <h2 className="text-xl font-semibold mb-4">{editingTask ? "일정 수정" : "새 일정"}</h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Input
@@ -653,21 +711,33 @@ export function AddTaskDialog({
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-0">
+              {editingTask && editingTask.task_type === "routine" && editingTask.group_id && (
+                <div className="flex gap-2 w-full sm:w-auto mb-2 sm:mb-0">
+                  <Button
+                    type="button"
+                    variant={updateMode === "single" ? "default" : "outline"}
+                    onClick={() => setUpdateMode("single")}
+                    className="flex-1 sm:flex-none rounded-lg"
+                  >
+                    이 일정만
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={updateMode === "all" ? "default" : "outline"}
+                    onClick={() => setUpdateMode("all")}
+                    className="flex-1 sm:flex-none rounded-lg"
+                  >
+                    일괄 수정
+                  </Button>
+                </div>
+              )}
               <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                className="rounded-lg border-zinc-200"
-              >
-                취소
-              </Button>
-              <Button
-                type="submit"
+                onClick={handleSubmit}
                 disabled={!formData.title.trim()}
-                className="rounded-lg bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-lg bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-300"
               >
-                추가
+                {editingTask ? "수정 완료" : "추가"}
               </Button>
             </DialogFooter>
           </form>

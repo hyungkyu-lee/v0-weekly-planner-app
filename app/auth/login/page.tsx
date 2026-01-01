@@ -1,15 +1,14 @@
 "use client"
 
 import type React from "react"
-
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -20,26 +19,36 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
     try {
+      const supabase = createClient()
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
+
       if (error) throw error
-      router.push("/planner")
+
+      router.replace("/planner")
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "로그인 오류가 발생했습니다")
-    } finally {
       setIsLoading(false)
     }
   }
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6 bg-zinc-50">
+      {isLoading && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-900 mx-auto mb-4"></div>
+            <p className="text-zinc-600">로그인 중...</p>
+          </div>
+        </div>
+      )}
       <div className="w-full max-w-sm">
         <Card className="border-zinc-200 shadow-sm rounded-2xl">
           <CardHeader>
@@ -61,6 +70,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="rounded-xl border-zinc-200"
+                    disabled={isLoading}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -74,6 +84,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="rounded-xl border-zinc-200"
+                    disabled={isLoading}
                   />
                 </div>
                 {error && <p className="text-sm text-red-500">{error}</p>}

@@ -4,75 +4,112 @@ import { useAuth } from "@/components/auth-provider"
 import { WeeklyPlanner } from "@/components/weekly-planner"
 import { createClient } from "@/lib/supabase/client"
 import type { Task } from "@/lib/types"
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useReducer } from "react"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
+
+type State = {
+  tasks: Task[]
+  isLoading: boolean
+}
+
+type Action =
+  | { type: "LOADING" }
+  | { type: "TASKS_LOADED"; tasks: Task[] }
+  | { type: "TASK_ADDED"; task: Task }
+  | { type: "TASK_UPDATED"; task: Task }
+  | { type: "TASK_DELETED"; taskId: string }
+  | { type: "TASKS_CLEARED" }
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case "LOADING":
+      return { ...state, isLoading: true }
+    case "TASKS_LOADED":
+      return { tasks: action.tasks, isLoading: false }
+    case "TASK_ADDED":
+      return { ...state, tasks: [...state.tasks, action.task] }
+    case "TASK_UPDATED":
+      return {
+        ...state,
+        tasks: state.tasks.map((t) => (t.id === action.task.id ? action.task : t)),
+      }
+    case "TASK_DELETED":
+      return {
+        ...state,
+        tasks: state.tasks.filter((t) => t.id !== action.taskId),
+      }
+    case "TASKS_CLEARED":
+      return { ...state, tasks: [] }
+    default:
+      return state
+  }
+}
 
 export default function PlannerPage() {
-  const { user, loading, signOut } = useAuth()
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
+  const [state, dispatch] = useReducer(reducer, { tasks: [], isLoading: true })
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/auth/login")
+    if (!authLoading && !user) {
+      router.replace("/auth/login")
     }
-  }, [user, loading, router])
+  }, [user, authLoading])
 
   useEffect(() => {
-    if (user) {
-      fetchTasks()
-      const cleanup = subscribeToTasks()
-      return cleanup
-    }
-  }, [user])
+    if (!user) return
 
-  const fetchTasks = async () => {
-    try {
-      setIsLoading(true)
-      const supabase = createClient()
-
-      const { data, error } = await supabase.from("tasks").select("*").order("start_time", { ascending: true })
-
-      if (error) {
-        console.error("Error fetching tasks:", error)
-      } else {
-        setTasks(data || [])
-      }
-    } catch (err) {
-      console.error("Fatal error fetching tasks:", err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const subscribeToTasks = () => {
     const supabase = createClient()
+    let isSubscribed = true
+
+    const fetchTasks = async () => {
+      try {
+        const { data, error } = await supabase.from("tasks").select("*").order("start_time", { ascending: true })
+
+        if (!isSubscribed) return
+
+        if (error) {
+          console.error("Error fetching tasks:", error)
+          dispatch({ type: "TASKS_LOADED", tasks: [] })
+        } else {
+          dispatch({ type: "TASKS_LOADED", tasks: data || [] })
+        }
+      } catch (err) {
+        console.error("Fatal error fetching tasks:", err)
+        if (isSubscribed) {
+          dispatch({ type: "TASKS_LOADED", tasks: [] })
+        }
+      }
+    }
+
+    fetchTasks()
 
     const channel = supabase
       .channel("tasks-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, (payload) => {
+        if (!isSubscribed) return
+
         if (payload.eventType === "INSERT") {
-          setTasks((prev) => [...prev, payload.new as Task])
+          dispatch({ type: "TASK_ADDED", task: payload.new as Task })
         } else if (payload.eventType === "UPDATE") {
-          setTasks((prev) => prev.map((task) => (task.id === payload.new.id ? (payload.new as Task) : task)))
+          dispatch({ type: "TASK_UPDATED", task: payload.new as Task })
         } else if (payload.eventType === "DELETE") {
-          setTasks((prev) => prev.filter((task) => task.id !== payload.old.id))
+          dispatch({ type: "TASK_DELETED", taskId: (payload.old as Task).id })
         }
       })
       .subscribe()
 
     return () => {
+      isSubscribed = false
       supabase.removeChannel(channel)
     }
-  }
+  }, [user])
 
   const handleTaskAdd = async (task: Omit<Task, "id" | "created_at" | "updated_at">) => {
     try {
       const supabase = createClient()
 
-      // Optimistic update: add temporary task to UI immediately
       const tempId = `temp-${Date.now()}`
       const tempTask = {
         ...task,
@@ -81,18 +118,16 @@ export default function PlannerPage() {
         updated_at: new Date().toISOString(),
       } as Task
 
-      setTasks((prev) => [...prev, tempTask])
+      dispatch({ type: "TASK_ADDED", task: tempTask })
 
       const { data, error } = await supabase.from("tasks").insert(task).select().single()
 
       if (error) {
-        // Rollback on error
-        setTasks((prev) => prev.filter((t) => t.id !== tempId))
+        dispatch({ type: "TASK_DELETED", taskId: tempId })
         console.error("Error adding task:", error)
         toast.error("일정 추가에 실패했습니다: " + error.message)
       } else {
-        // Replace temp task with real one
-        setTasks((prev) => prev.map((t) => (t.id === tempId ? data : t)))
+        dispatch({ type: "TASK_UPDATED", task: data })
         toast.success("일정이 추가되었습니다", { duration: 1000 })
       }
     } catch (err) {
@@ -101,85 +136,100 @@ export default function PlannerPage() {
     }
   }
 
-  const handleTaskUpdate = async (task: Task) => {
+  const handleTaskUpdate = async (task: Task, updateMode: "single" | "all" = "single") => {
     try {
       const supabase = createClient()
-      const { error } = await supabase
-        .from("tasks")
-        .update({
-          title: task.title,
-          start_time: task.start_time,
-          end_time: task.end_time,
-          is_done: task.is_done,
-          memo: task.memo,
-          color: task.color,
-          task_type: task.task_type,
-          event_date: task.event_date,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", task.id)
 
-      if (error) {
-        console.error("Error updating task:", error)
-        alert("일정 업데이트에 실패했습니다.")
+      if (updateMode === "all" && task.group_id) {
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            title: task.title,
+            memo: task.memo,
+            color: task.color,
+            is_important: task.is_important,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("group_id", task.group_id)
+
+        if (error) {
+          console.error("Error updating recurring group:", error)
+          toast.error("반복 일정 수정에 실패했습니다.")
+        } else {
+          toast.success("반복 일정이 모두 수정되었습니다", { duration: 1000 })
+        }
+      } else {
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            title: task.title,
+            start_time: task.start_time,
+            end_time: task.end_time,
+            is_done: task.is_done,
+            memo: task.memo,
+            color: task.color,
+            task_type: task.task_type,
+            event_date: task.event_date,
+            is_important: task.is_important,
+            repeat_days: task.repeat_days,
+            group_id: updateMode === "single" ? null : task.group_id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", task.id)
+
+        if (error) {
+          console.error("Error updating task:", error)
+          toast.error("일정 수정에 실패했습니다.")
+        } else {
+          toast.success("일정이 수정되었습니다", { duration: 1000 })
+        }
       }
     } catch (err) {
       console.error("Fatal error updating task:", err)
+      toast.error("일정 수정 중 오류가 발생했습니다.")
     }
   }
 
   const handleTaskDelete = async (taskId: string) => {
-    console.log("[v0] PlannerPage: handleTaskDelete called with taskId:", taskId)
     try {
-      // Optimistic update: remove task from UI immediately
-      const deletedTask = tasks.find((t) => t.id === taskId)
-      console.log("[v0] PlannerPage: Found task to delete:", deletedTask)
-      setTasks((prev) => prev.filter((t) => t.id !== taskId))
+      const deletedTask = state.tasks.find((t) => t.id === taskId)
+      dispatch({ type: "TASK_DELETED", taskId })
 
       const supabase = createClient()
-      console.log("[v0] PlannerPage: Calling Supabase delete for taskId:", taskId)
       const { error } = await supabase.from("tasks").delete().eq("id", taskId)
 
       if (error) {
-        console.error("[v0] PlannerPage: Error deleting task:", error)
-        // Rollback on error
+        console.error("Error deleting task:", error)
         if (deletedTask) {
-          setTasks((prev) => [...prev, deletedTask])
+          dispatch({ type: "TASK_ADDED", task: deletedTask })
         }
         toast.error("일정 삭제에 실패했습니다.")
       } else {
-        console.log("[v0] PlannerPage: Task deleted successfully")
         toast.success("일정이 삭제되었습니다", { duration: 1000 })
       }
     } catch (err) {
-      console.error("[v0] PlannerPage: Fatal error deleting task:", err)
+      console.error("Fatal error deleting task:", err)
       toast.error("일정 삭제 중 오류가 발생했습니다.")
     }
   }
 
   const handleRecurringGroupDelete = async (groupId: string) => {
-    console.log("[v0] PlannerPage: handleRecurringGroupDelete called with groupId:", groupId)
     try {
-      // Optimistic update: remove all tasks with the same group_id from UI immediately
-      const deletedTasks = tasks.filter((t) => t.group_id === groupId)
-      console.log("[v0] PlannerPage: Found", deletedTasks.length, "tasks to delete in group")
-      setTasks((prev) => prev.filter((t) => t.group_id !== groupId))
+      const deletedTasks = state.tasks.filter((t) => t.group_id === groupId)
+      deletedTasks.forEach((t) => dispatch({ type: "TASK_DELETED", taskId: t.id }))
 
       const supabase = createClient()
-      console.log("[v0] PlannerPage: Calling Supabase delete for groupId:", groupId)
       const { error } = await supabase.from("tasks").delete().eq("group_id", groupId)
 
       if (error) {
-        console.error("[v0] PlannerPage: Error deleting recurring group:", error)
-        // Rollback on error
-        setTasks((prev) => [...prev, ...deletedTasks])
+        console.error("Error deleting recurring group:", error)
+        deletedTasks.forEach((t) => dispatch({ type: "TASK_ADDED", task: t }))
         toast.error("반복 일정 삭제에 실패했습니다.")
       } else {
-        console.log("[v0] PlannerPage: Recurring group deleted successfully")
         toast.success("반복 일정이 모두 삭제되었습니다", { duration: 1000 })
       }
     } catch (err) {
-      console.error("[v0] PlannerPage: Fatal error deleting recurring group:", err)
+      console.error("Fatal error deleting recurring group:", err)
       toast.error("반복 일정 삭제 중 오류가 발생했습니다.")
     }
   }
@@ -188,16 +238,14 @@ export default function PlannerPage() {
     try {
       const supabase = createClient()
 
-      // Optimistic update: clear all tasks from UI immediately
-      const deletedTasks = [...tasks]
-      setTasks([])
+      const deletedTasks = [...state.tasks]
+      dispatch({ type: "TASKS_CLEARED" })
 
       const { error } = await supabase.from("tasks").delete().neq("id", "00000000-0000-0000-0000-000000000000")
 
       if (error) {
         console.error("Error deleting all tasks:", error)
-        // Rollback on error
-        setTasks(deletedTasks)
+        deletedTasks.forEach((t) => dispatch({ type: "TASK_ADDED", task: t }))
         toast.error("모든 일정 삭제에 실패했습니다.")
       } else {
         toast.success("모든 일정이 삭제되었습니다", { duration: 1000 })
@@ -208,12 +256,18 @@ export default function PlannerPage() {
     }
   }
 
-  if (loading || isLoading) {
+  const handleSignOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.replace("/auth/login")
+  }
+
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-900 mx-auto mb-4" />
-          <p className="text-zinc-600">로딩 중...</p>
+          <p className="text-zinc-600">인증 확인 중...</p>
         </div>
       </div>
     )
@@ -223,17 +277,27 @@ export default function PlannerPage() {
     return null
   }
 
+  if (state.isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-zinc-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-900 mx-auto mb-4" />
+          <p className="text-zinc-600">일정 불러오는 중...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-screen flex flex-col bg-zinc-50">
-      {/* Planner */}
       <WeeklyPlanner
-        tasks={tasks}
+        tasks={state.tasks}
         onTaskAdd={handleTaskAdd}
         onTaskUpdate={handleTaskUpdate}
         onTaskDelete={handleTaskDelete}
         onDeleteRecurringGroup={handleRecurringGroupDelete}
         onDeleteAllTasks={handleDeleteAllTasks}
-        onSignOut={signOut}
+        onSignOut={handleSignOut}
       />
     </div>
   )

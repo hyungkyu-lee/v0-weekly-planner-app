@@ -15,6 +15,13 @@ export function createClient() {
     return supabaseClient
   }
 
-  supabaseClient = createBrowserClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey)
+  supabaseClient = createBrowserClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  })
+
   return supabaseClient
 }
