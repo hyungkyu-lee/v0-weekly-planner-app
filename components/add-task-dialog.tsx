@@ -119,6 +119,9 @@ export function AddTaskDialog({
         return
       }
 
+      const groupId = crypto.randomUUID()
+      console.log("[v0] Creating recurring tasks with group_id:", groupId)
+
       const datesToProcess = formData.repeatDays.map((dayOffset) => addDays(formData.startDate, dayOffset))
 
       for (const date of datesToProcess) {
@@ -135,6 +138,7 @@ export function AddTaskDialog({
           color: selectedColor,
           task_type: "routine" as const,
           repeat_days: formData.repeatDays,
+          group_id: groupId,
         }
 
         const overlap = checkTaskOverlap(newTask, existingTasks)

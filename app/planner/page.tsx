@@ -129,26 +129,81 @@ export default function PlannerPage() {
   }
 
   const handleTaskDelete = async (taskId: string) => {
+    console.log("[v0] PlannerPage: handleTaskDelete called with taskId:", taskId)
     try {
       // Optimistic update: remove task from UI immediately
       const deletedTask = tasks.find((t) => t.id === taskId)
+      console.log("[v0] PlannerPage: Found task to delete:", deletedTask)
       setTasks((prev) => prev.filter((t) => t.id !== taskId))
 
       const supabase = createClient()
+      console.log("[v0] PlannerPage: Calling Supabase delete for taskId:", taskId)
       const { error } = await supabase.from("tasks").delete().eq("id", taskId)
 
       if (error) {
+        console.error("[v0] PlannerPage: Error deleting task:", error)
         // Rollback on error
         if (deletedTask) {
           setTasks((prev) => [...prev, deletedTask])
         }
-        console.error("Error deleting task:", error)
         toast.error("일정 삭제에 실패했습니다.")
       } else {
+        console.log("[v0] PlannerPage: Task deleted successfully")
         toast.success("일정이 삭제되었습니다")
       }
     } catch (err) {
-      console.error("Fatal error deleting task:", err)
+      console.error("[v0] PlannerPage: Fatal error deleting task:", err)
+      toast.error("일정 삭제 중 오류가 발생했습니다.")
+    }
+  }
+
+  const handleRecurringGroupDelete = async (groupId: string) => {
+    console.log("[v0] PlannerPage: handleRecurringGroupDelete called with groupId:", groupId)
+    try {
+      // Optimistic update: remove all tasks with the same group_id from UI immediately
+      const deletedTasks = tasks.filter((t) => t.group_id === groupId)
+      console.log("[v0] PlannerPage: Found", deletedTasks.length, "tasks to delete in group")
+      setTasks((prev) => prev.filter((t) => t.group_id !== groupId))
+
+      const supabase = createClient()
+      console.log("[v0] PlannerPage: Calling Supabase delete for groupId:", groupId)
+      const { error } = await supabase.from("tasks").delete().eq("group_id", groupId)
+
+      if (error) {
+        console.error("[v0] PlannerPage: Error deleting recurring group:", error)
+        // Rollback on error
+        setTasks((prev) => [...prev, ...deletedTasks])
+        toast.error("반복 일정 삭제에 실패했습니다.")
+      } else {
+        console.log("[v0] PlannerPage: Recurring group deleted successfully")
+        toast.success("반복 일정이 모두 삭제되었습니다")
+      }
+    } catch (err) {
+      console.error("[v0] PlannerPage: Fatal error deleting recurring group:", err)
+      toast.error("반복 일정 삭제 중 오류가 발생했습니다.")
+    }
+  }
+
+  const handleDeleteAllTasks = async () => {
+    try {
+      const supabase = createClient()
+
+      // Optimistic update: clear all tasks from UI immediately
+      const deletedTasks = [...tasks]
+      setTasks([])
+
+      const { error } = await supabase.from("tasks").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+
+      if (error) {
+        console.error("Error deleting all tasks:", error)
+        // Rollback on error
+        setTasks(deletedTasks)
+        toast.error("모든 일정 삭제에 실패했습니다.")
+      } else {
+        toast.success("모든 일정이 삭제되었습니다")
+      }
+    } catch (err) {
+      console.error("Fatal error deleting all tasks:", err)
       toast.error("일정 삭제 중 오류가 발생했습니다.")
     }
   }
@@ -176,6 +231,8 @@ export default function PlannerPage() {
         onTaskAdd={handleTaskAdd}
         onTaskUpdate={handleTaskUpdate}
         onTaskDelete={handleTaskDelete}
+        onDeleteRecurringGroup={handleRecurringGroupDelete}
+        onDeleteAllTasks={handleDeleteAllTasks}
         onSignOut={signOut}
       />
     </div>

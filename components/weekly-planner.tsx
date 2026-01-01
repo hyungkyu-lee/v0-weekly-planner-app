@@ -18,13 +18,23 @@ interface WeeklyPlannerProps {
   tasks: Task[]
   onTaskUpdate: (task: Task) => Promise<void>
   onTaskDelete: (taskId: string) => Promise<void>
+  onDeleteRecurringGroup: (groupId: string) => Promise<void>
   onTaskAdd: (task: Omit<Task, "id" | "created_at" | "updated_at">) => Promise<void>
+  onDeleteAllTasks: () => Promise<void>
   onSignOut?: () => void
 }
 
 type ViewMode = "weekly" | "monthly"
 
-export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, onSignOut }: WeeklyPlannerProps) {
+export function WeeklyPlanner({
+  tasks,
+  onTaskUpdate,
+  onTaskDelete,
+  onDeleteRecurringGroup,
+  onTaskAdd,
+  onDeleteAllTasks,
+  onSignOut,
+}: WeeklyPlannerProps) {
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()))
   const [isHeaderVisible, setIsHeaderVisible] = useState(true)
@@ -41,7 +51,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
     return time24
   }
 
-  const HOUR_HEIGHT = 64
+  const HOUR_HEIGHT = 45
   const timeSlots = Array.from({ length: (weekSettings.endHour - weekSettings.startHour + 1) * 2 }, (_, i) => {
     const hour = Math.floor(i / 2) + weekSettings.startHour
     const minute = i % 2 === 0 ? "00" : "30"
@@ -123,7 +133,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
                 viewMode === "weekly" ? "bg-zinc-900 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"
               }`}
             >
-              주간
+              W
             </button>
             <button
               onClick={() => setViewMode("monthly")}
@@ -131,7 +141,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
                 viewMode === "monthly" ? "bg-zinc-900 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"
               }`}
             >
-              월간
+              M
             </button>
           </div>
           <Button variant="outline" size="sm" onClick={goToToday} className="h-8 text-xs bg-transparent">
@@ -142,13 +152,13 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
         {/* Center Group - Date Navigation */}
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" onClick={goToPrevious} className="h-8 w-8">
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-5 w-5" />
           </Button>
           <div className="text-sm font-semibold text-zinc-900 min-w-[140px] text-center">
             {viewMode === "weekly" ? formatYearMonthWeek(currentWeekStart) : formatYearMonth(currentMonth)}
           </div>
           <Button variant="ghost" size="icon" onClick={goToNext} className="h-8 w-8">
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-5 w-5" />
           </Button>
         </div>
 
@@ -226,7 +236,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
                 {timeSlots.map((time) => (
                   <div
                     key={time}
-                    className="flex items-start justify-center pt-1 text-xs text-zinc-400 border-t border-zinc-100"
+                    className="flex items-center justify-center text-[10px] text-zinc-400 border-t border-zinc-100"
                     style={{ height: `${HOUR_HEIGHT / 2}px` }}
                   >
                     {formatTime24Hour(time)}
@@ -265,10 +275,15 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
                         return (
                           <div
                             key={task.id}
-                            className="absolute left-0 right-0 px-0.5"
+                            className="absolute left-0 right-0"
                             style={{ top: `${top}px`, height: `${height}px` }}
                           >
-                            <TaskCard task={task} onUpdate={onTaskUpdate} onDelete={onTaskDelete} />
+                            <TaskCard
+                              task={task}
+                              onUpdate={onTaskUpdate}
+                              onDelete={onTaskDelete}
+                              onDeleteRecurringGroup={onDeleteRecurringGroup}
+                            />
                           </div>
                         )
                       })}
@@ -296,6 +311,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
         onOpenChange={setShowSettingsDialog}
         settings={weekSettings}
         onSettingsChange={setWeekSettings}
+        onDeleteAllTasks={onDeleteAllTasks}
       />
     </div>
   )

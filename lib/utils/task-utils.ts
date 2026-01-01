@@ -31,9 +31,9 @@ export function checkTaskOverlap(
   return null
 }
 
-// Height of one hour slot is 64px (32px per 30-minute slot)
-const HOUR_HEIGHT = 64
-const HALF_HOUR_HEIGHT = 32
+// Height of one hour slot is 45px (30% reduction from 64px)
+const HOUR_HEIGHT = 45
+const HALF_HOUR_HEIGHT = 22.5
 
 export function getTaskPosition(startTime: string, endTime: string, startHour = 8) {
   const start = parseISO(startTime)
