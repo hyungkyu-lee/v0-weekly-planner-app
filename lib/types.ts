@@ -30,4 +30,25 @@ export interface TaskFormData {
 export interface WeekSettings {
   startHour: number // Default 8
   endHour: number // Default 23
+  globalInterval: 10 | 30 | 60 | 120 // minutes
+  exceptionRules: IntervalException[]
+}
+
+export interface IntervalException {
+  id: string
+  startTime: string // HH:mm format
+  endTime: string // HH:mm format
+  interval: 0 | 10 | 30 | 60 | 120 // Added 0 for "No Split" option
+}
+
+export interface TimeSlot {
+  time: string // HH:mm format
+  height: number // in pixels
+  interval?: number // Added interval to track the minutes covered by this slot
+}
+
+export interface HoverState {
+  type: "cell" | "task" | null
+  dayIndex: number | null
+  timeSlots: string[] // Array of time labels to highlight
 }

@@ -2,22 +2,19 @@ import { createBrowserClient } from "@supabase/ssr"
 
 let supabaseClient: ReturnType<typeof createBrowserClient> | null = null
 
+// Supabase configuration - anon key is public by design
+// Real security comes from Row Level Security (RLS) policies in the database
+const SUPABASE_CONFIG = {
+  url: "https://uhucfnnhzbvlatjhtthv.supabase.co",
+  anonKey:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVodWNmbm5oemJ2bGF0amh0dGh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcyMzM4NTMsImV4cCI6MjA4MjgwOTg1M30._GdPJJxUNpTXKTvSJtx07kiGOjxBx9KVA12GQqnnwyc",
+}
+
 export function createClient() {
   if (supabaseClient) {
     return supabaseClient
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_PLANNERSUPABASE_URL!
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_PLANNERSUPABASE_ANON_KEY!
-
-  console.log("[v0] Creating Supabase client with URL:", supabaseUrl ? "✓ URL found" : "✗ URL missing")
-  console.log("[v0] Anon key:", supabaseAnonKey ? "✓ Key found" : "✗ Key missing")
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error("[v0] Missing Supabase credentials!")
-    throw new Error("Missing Supabase environment variables")
-  }
-
-  supabaseClient = createBrowserClient(supabaseUrl, supabaseAnonKey)
+  supabaseClient = createBrowserClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey)
   return supabaseClient
 }

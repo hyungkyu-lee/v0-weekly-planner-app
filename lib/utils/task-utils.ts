@@ -1,4 +1,4 @@
-import type { Task } from "@/lib/types"
+import type { Task, TimeSlot } from "@/lib/types"
 import { parseISO, isWithinInterval } from "date-fns"
 
 export function checkTaskOverlap(
@@ -31,9 +31,9 @@ export function checkTaskOverlap(
   return null
 }
 
-// Height of one hour slot is 45px (30% reduction from 64px)
-const HOUR_HEIGHT = 45
-const HALF_HOUR_HEIGHT = 22.5
+// Height of one hour slot is 27px (60% reduction from 45px)
+const HOUR_HEIGHT = 27
+const HALF_HOUR_HEIGHT = 13.5
 
 export function getTaskPosition(startTime: string, endTime: string, startHour = 8) {
   const start = parseISO(startTime)
@@ -58,4 +58,60 @@ export function getTaskPosition(startTime: string, endTime: string, startHour = 
     top,
     height,
   }
+}
+
+export function calculateTaskPosition(
+  startTime: string,
+  endTime: string,
+  timeSlots: TimeSlot[],
+): { top: number; height: number } {
+  const start = parseISO(startTime)
+  const end = parseISO(endTime)
+
+  const startHour = start.getHours()
+  const startMinute = start.getMinutes()
+  const startTotalMinutes = startHour * 60 + startMinute
+
+  const endHour = end.getHours()
+  const endMinute = end.getMinutes()
+  const endTotalMinutes = endHour * 60 + endMinute
+
+  let top = 0
+  let height = 0
+  let foundStart = false
+
+  // Iterate through time slots to calculate cumulative position
+  for (let i = 0; i < timeSlots.length; i++) {
+    const slot = timeSlots[i]
+    const [slotHour, slotMin] = slot.time.split(":").map(Number)
+    const slotStartMinutes = slotHour * 60 + slotMin
+    const slotEndMinutes = slotStartMinutes + (slot.interval || 30)
+
+    // Task starts in or before this slot
+    if (!foundStart && startTotalMinutes >= slotStartMinutes && startTotalMinutes < slotEndMinutes) {
+      foundStart = true
+      // Calculate partial offset if task starts mid-slot
+      const minutesIntoSlot = startTotalMinutes - slotStartMinutes
+      const slotInterval = slot.interval || 30
+      const proportionalOffset = (minutesIntoSlot / slotInterval) * slot.height
+      top += proportionalOffset
+    } else if (!foundStart) {
+      // Haven't reached the start yet, add full slot height
+      top += slot.height
+    }
+
+    // Task ends in this slot
+    if (foundStart && endTotalMinutes <= slotEndMinutes) {
+      const minutesIntoSlot = Math.min(endTotalMinutes, slotEndMinutes) - Math.max(startTotalMinutes, slotStartMinutes)
+      const slotInterval = slot.interval || 30
+      const proportionalHeight = (minutesIntoSlot / slotInterval) * slot.height
+      height += proportionalHeight
+      break
+    } else if (foundStart) {
+      // Task spans multiple slots, add full height
+      height += slot.height
+    }
+  }
+
+  return { top, height }
 }

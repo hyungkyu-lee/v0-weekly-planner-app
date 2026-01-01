@@ -1,7 +1,6 @@
 "use client"
 
-import type { Task, WeekSettings } from "@/lib/types"
-import { getTaskPosition } from "@/lib/utils/task-utils"
+import type { Task, WeekSettings, TimeSlot, HoverState } from "@/lib/types"
 import { checkIsHoliday } from "@/lib/utils/holidays"
 import { formatYearMonthWeek, formatYearMonth } from "@/lib/utils/week-utils"
 import { format, addDays, startOfWeek, isBefore, startOfDay, isToday, addMonths, startOfMonth } from "date-fns"
@@ -13,6 +12,7 @@ import { MonthlyView } from "./monthly-view"
 import { Button } from "./ui/button"
 import { ChevronLeft, ChevronRight, Plus, Settings, LogOut } from "lucide-react"
 import { WeekSettingsDialog } from "./week-settings-dialog"
+import { calculateTaskPosition } from "@/lib/utils/task-utils"
 
 interface WeeklyPlannerProps {
   tasks: Task[]
@@ -43,21 +43,127 @@ export function WeeklyPlanner({
     date: Date
     time: string
   } | null>(null)
-  const [weekSettings, setWeekSettings] = useState<WeekSettings>({ startHour: 8, endHour: 23 })
+  const [weekSettings, setWeekSettings] = useState<WeekSettings>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("weekSettings")
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.error("[v0] Failed to parse saved settings:", e)
+        }
+      }
+    }
+    return {
+      startHour: 8,
+      endHour: 23,
+      globalInterval: 30,
+      exceptionRules: [],
+    }
+  })
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("weekly")
-  const [hoveredTime, setHoveredTime] = useState<string | null>(null)
+  const [hoverState, setHoverState] = useState<HoverState>({
+    type: null,
+    dayIndex: null,
+    timeSlots: [],
+  })
 
-  const formatTime24Hour = (time24: string) => {
-    return time24
+  const [dragState, setDragState] = useState<{
+    isDragging: boolean
+    startDate: Date | null
+    startTime: string | null
+    currentDate: Date | null
+    currentTime: string | null
+  }>({
+    isDragging: false,
+    startDate: null,
+    startTime: null,
+    currentDate: null,
+    currentTime: null,
+  })
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout)
+      }
+    }
+  }, [scrollTimeout])
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("weekSettings", JSON.stringify(weekSettings))
+    }
+  }, [weekSettings])
+
+  const formatTimeRange = (time24: string, intervalMinutes: number) => {
+    const [hour, minute] = time24.split(":").map(Number)
+    const endMinutes = minute + intervalMinutes
+    const endHour = Math.floor((hour * 60 + endMinutes) / 60)
+    const endMinute = (hour * 60 + endMinutes) % 60
+
+    return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")} ~ ${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`
   }
 
-  const HOUR_HEIGHT = 45
-  const timeSlots = Array.from({ length: (weekSettings.endHour - weekSettings.startHour + 1) * 2 }, (_, i) => {
-    const hour = Math.floor(i / 2) + weekSettings.startHour
-    const minute = i % 2 === 0 ? "00" : "30"
-    return `${hour.toString().padStart(2, "0")}:${minute}`
-  })
+  const HOUR_HEIGHT = 27
+
+  const generateTimeSlots = (): TimeSlot[] => {
+    const slots: TimeSlot[] = []
+    let cursor = weekSettings.startHour * 60
+    const endMinutes = (weekSettings.endHour + 1) * 60
+
+    while (cursor < endMinutes) {
+      let step = weekSettings.globalInterval
+
+      const activeRule = weekSettings.exceptionRules.find((rule) => {
+        const [ruleStartHour, ruleStartMin] = rule.startTime.split(":").map(Number)
+        const [ruleEndHour, ruleEndMin] = rule.endTime.split(":").map(Number)
+        const ruleStartMinutes = ruleStartHour * 60 + ruleStartMin
+        const ruleEndMinutes = ruleEndHour * 60 + ruleEndMin
+        return cursor >= ruleStartMinutes && cursor < ruleEndMinutes
+      })
+
+      if (activeRule) {
+        if (activeRule.interval === 0) {
+          const [ruleEndHour, ruleEndMin] = activeRule.endTime.split(":").map(Number)
+          const ruleEndMinutes = ruleEndHour * 60 + ruleEndMin
+          step = ruleEndMinutes - cursor
+        } else {
+          step = activeRule.interval
+        }
+      }
+
+      const upcomingRule = weekSettings.exceptionRules.find((rule) => {
+        const [ruleStartHour, ruleStartMin] = rule.startTime.split(":").map(Number)
+        const ruleStartMinutes = ruleStartHour * 60 + ruleStartMin
+        return ruleStartMinutes > cursor && ruleStartMinutes < cursor + step
+      })
+
+      if (upcomingRule) {
+        const [upcomingStartHour, upcomingStartMin] = upcomingRule.startTime.split(":").map(Number)
+        const upcomingStartMinutes = upcomingStartHour * 60 + upcomingStartMin
+        step = upcomingStartMinutes - cursor
+      }
+
+      const currentHour = Math.floor(cursor / 60)
+      const currentMin = cursor % 60
+      const currentTime = `${currentHour.toString().padStart(2, "0")}:${currentMin.toString().padStart(2, "0")}`
+      const slotHeight = HOUR_HEIGHT
+
+      slots.push({
+        time: currentTime,
+        height: slotHeight,
+        interval: step,
+      })
+
+      cursor += step
+    }
+
+    return slots
+  }
+
+  const timeSlots = generateTimeSlots()
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
 
@@ -75,14 +181,6 @@ export function WeeklyPlanner({
     setScrollTimeout(timeout)
   }
 
-  useEffect(() => {
-    return () => {
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout)
-      }
-    }
-  }, [scrollTimeout])
-
   const handleSlotClick = (date: Date, time: string) => {
     const today = startOfDay(new Date())
     if (isBefore(startOfDay(date), today)) {
@@ -90,6 +188,99 @@ export function WeeklyPlanner({
     }
     setSelectedSlot({ date, time })
   }
+
+  const handleMouseDown = (date: Date, time: string) => {
+    const today = startOfDay(new Date())
+    if (isBefore(startOfDay(date), today)) {
+      return
+    }
+    setDragState({
+      isDragging: true,
+      startDate: date,
+      startTime: time,
+      currentDate: date,
+      currentTime: time,
+    })
+  }
+
+  const handleMouseEnter = (date: Date, time: string) => {
+    if (dragState.isDragging) {
+      setDragState((prev) => ({
+        ...prev,
+        currentDate: date,
+        currentTime: time,
+      }))
+    }
+  }
+
+  const handleMouseUp = () => {
+    if (dragState.isDragging && dragState.startDate && dragState.startTime) {
+      const startDateTime = new Date(dragState.startDate)
+      const [startHour, startMinute] = dragState.startTime.split(":").map(Number)
+      startDateTime.setHours(startHour, startMinute, 0, 0)
+
+      const endDateTime = new Date(dragState.currentDate || dragState.startDate)
+      const [endHour, endMinute] = (dragState.currentTime || dragState.startTime).split(":").map(Number)
+      endDateTime.setHours(endHour, endMinute, 0, 0)
+
+      const currentSlot = timeSlots.find((slot) => slot.time === (dragState.currentTime || dragState.startTime))
+      const intervalMinutes = currentSlot?.interval || weekSettings.globalInterval
+      endDateTime.setMinutes(endDateTime.getMinutes() + intervalMinutes)
+
+      const finalStartTime = startDateTime <= endDateTime ? startDateTime : endDateTime
+      const finalEndTime = startDateTime <= endDateTime ? endDateTime : startDateTime
+
+      setSelectedSlot({
+        date: finalStartTime,
+        time: format(finalStartTime, "HH:mm"),
+      })
+    }
+
+    setDragState({
+      isDragging: false,
+      startDate: null,
+      startTime: null,
+      currentDate: null,
+      currentTime: null,
+    })
+  }
+
+  const getDragSelection = () => {
+    if (!dragState.isDragging || !dragState.startDate || !dragState.startTime) {
+      return []
+    }
+
+    const startDateTime = new Date(dragState.startDate)
+    const [startHour, startMinute] = dragState.startTime.split(":").map(Number)
+    startDateTime.setHours(startHour, startMinute, 0, 0)
+
+    const endDateTime = new Date(dragState.currentDate || dragState.startDate)
+    const [endHour, endMinute] = (dragState.currentTime || dragState.startTime).split(":").map(Number)
+    endDateTime.setHours(endHour, endMinute, 0, 0)
+
+    const selections: { dayIndex: number; timeSlot: string }[] = []
+
+    if (
+      format(dragState.startDate, "yyyy-MM-dd") === format(dragState.currentDate || dragState.startDate, "yyyy-MM-dd")
+    ) {
+      const dayIndex = weekDays.findIndex(
+        (day) => format(day, "yyyy-MM-dd") === format(dragState.startDate!, "yyyy-MM-dd"),
+      )
+
+      const minTime = startDateTime <= endDateTime ? dragState.startTime : dragState.currentTime || dragState.startTime
+      const maxTime = startDateTime <= endDateTime ? dragState.currentTime || dragState.startTime : dragState.startTime
+
+      timeSlots.forEach((slot) => {
+        if (slot.time >= minTime! && slot.time <= maxTime!) {
+          selections.push({ dayIndex, timeSlot: slot.time })
+        }
+      })
+    }
+
+    return selections
+  }
+
+  const dragSelections = getDragSelection()
 
   const goToPrevious = () => {
     if (viewMode === "weekly") {
@@ -120,10 +311,46 @@ export function WeeklyPlanner({
 
   const filteredTasks = viewMode === "monthly" ? tasks.filter((task) => task.task_type === "event") : tasks
 
+  const handleCellHover = (dayIndex: number, timeSlot: string) => {
+    setHoverState({
+      type: "cell",
+      dayIndex,
+      timeSlots: [timeSlot],
+    })
+  }
+
+  const handleTaskHover = (task: Task, dayIndex: number) => {
+    const startTime = new Date(task.start_time)
+    const endTime = new Date(task.end_time)
+
+    const coveredSlots = timeSlots
+      .filter((slot) => {
+        const [hour, minute] = slot.time.split(":").map(Number)
+        const slotTime = new Date(startTime)
+        slotTime.setHours(hour, minute, 0, 0)
+        return slotTime >= startTime && slotTime < endTime
+      })
+      .map((slot) => slot.time)
+
+    setHoverState({
+      type: "task",
+      dayIndex,
+      timeSlots: coveredSlots,
+    })
+  }
+
+  const handleHoverLeave = () => {
+    setHoverState({
+      type: null,
+      dayIndex: null,
+      timeSlots: [],
+    })
+  }
+
   const SIDEBAR_WIDTH = "96px"
 
   return (
-    <div className="h-full flex flex-col bg-white w-full">
+    <div className="relative h-full overflow-hidden bg-zinc-50">
       <div className="h-14 border-b border-zinc-200 flex items-center justify-between px-4">
         {/* Left Group */}
         <div className="flex items-center gap-2">
@@ -188,26 +415,35 @@ export function WeeklyPlanner({
         <MonthlyView currentMonth={currentMonth} tasks={filteredTasks} onDayClick={handleDayClick} />
       ) : (
         <div className="flex-1 overflow-auto" onScroll={handleScroll}>
-          <div className="relative">
+          <div className="relative" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
             {/* Day Header Row */}
             <div
               className="sticky top-0 z-40 bg-white border-b border-zinc-200 grid"
               style={{ gridTemplateColumns: `${SIDEBAR_WIDTH} repeat(7, 1fr)` }}
             >
               <div className="border-r border-zinc-100" />
-              {weekDays.map((day) => {
+              {weekDays.map((day, dayIndex) => {
                 const isPast = isBefore(startOfDay(day), startOfDay(new Date()))
                 const isTodayDate = isToday(day)
                 const isHoliday = checkIsHoliday(day)
+                const isHighlighted = hoverState.dayIndex === dayIndex
 
                 return (
                   <div
                     key={day.toISOString()}
-                    className={`text-center py-3 border-r border-zinc-100 ${isHoliday ? "bg-red-50/30" : ""}`}
+                    className={`text-center py-3 border-r border-zinc-100 transition-colors ${
+                      isHoliday ? "bg-red-50/30" : ""
+                    } ${isHighlighted ? "bg-blue-50" : ""}`}
                   >
                     <div
                       className={`text-xs font-medium ${
-                        isHoliday ? "text-red-500" : isPast ? "text-zinc-300" : "text-zinc-500"
+                        isHoliday
+                          ? "text-red-500"
+                          : isPast
+                            ? "text-zinc-300"
+                            : isHighlighted
+                              ? "text-blue-600 font-bold"
+                              : "text-zinc-500"
                       }`}
                     >
                       {format(day, "EEE", { locale: ko })}
@@ -219,7 +455,13 @@ export function WeeklyPlanner({
                     ) : (
                       <div
                         className={`text-base font-semibold mt-1 ${
-                          isHoliday ? "text-red-500" : isPast ? "text-zinc-300" : "text-zinc-900"
+                          isHoliday
+                            ? "text-red-500"
+                            : isPast
+                              ? "text-zinc-300"
+                              : isHighlighted
+                                ? "text-blue-600"
+                                : "text-zinc-900"
                         }`}
                       >
                         {format(day, "d")}
@@ -232,23 +474,35 @@ export function WeeklyPlanner({
 
             {/* Time Grid Body */}
             <div className="grid" style={{ gridTemplateColumns: `${SIDEBAR_WIDTH} repeat(7, 1fr)` }}>
-              {/* Time Column */}
-              <div className="sticky left-0 bg-white z-10 border-r border-zinc-100">
-                {timeSlots.map((time) => (
-                  <div
-                    key={time}
-                    className={`flex items-center justify-center text-xs border-t border-zinc-100 transition-colors ${
-                      hoveredTime === time ? "text-zinc-900 font-bold" : "text-zinc-400 font-medium"
-                    }`}
-                    style={{ height: `${HOUR_HEIGHT / 2}px` }}
-                  >
-                    {formatTime24Hour(time)}
-                  </div>
-                ))}
+              {/* Time Sidebar */}
+              <div className="border-r border-zinc-200">
+                {timeSlots.map((slot, index) => {
+                  const isHighlighted = hoverState.timeSlots.includes(slot.time)
+                  // Calculate end time based on interval
+                  const [hours, minutes] = slot.time.split(":").map(Number)
+                  const startMinutes = hours * 60 + minutes
+                  const endMinutes = startMinutes + slot.interval
+                  const endHours = Math.floor(endMinutes / 60)
+                  const endMins = endMinutes % 60
+                  const endTime = `${String(endHours).padStart(2, "0")}:${String(endMins).padStart(2, "0")}`
+                  const timeRange = `${slot.time}~${endTime}`
+
+                  return (
+                    <div
+                      key={index}
+                      className={`flex items-center justify-center border-b border-zinc-100 transition-colors ${
+                        isHighlighted ? "bg-blue-50 font-semibold text-blue-600" : "text-zinc-400"
+                      }`}
+                      style={{ height: `${slot.height}px` }}
+                    >
+                      <span className="text-[10px] font-medium">{timeRange}</span>
+                    </div>
+                  )
+                })}
               </div>
 
               {/* Day Columns */}
-              {weekDays.map((day) => {
+              {weekDays.map((day, dayIndex) => {
                 const isPast = isBefore(startOfDay(day), startOfDay(new Date()))
                 const isHoliday = checkIsHoliday(day)
 
@@ -257,18 +511,34 @@ export function WeeklyPlanner({
                     key={day.toISOString()}
                     className={`relative border-r border-zinc-100 ${isHoliday ? "bg-red-50/30" : ""}`}
                   >
-                    {timeSlots.map((time) => (
-                      <div
-                        key={time}
-                        className={`border-t border-zinc-100 transition-colors ${
-                          isPast ? "bg-zinc-100" : "hover:bg-zinc-50/70 cursor-pointer"
-                        }`}
-                        style={{ height: `${HOUR_HEIGHT / 2}px` }}
-                        onClick={() => handleSlotClick(day, time)}
-                        onMouseEnter={() => !isPast && setHoveredTime(time)}
-                        onMouseLeave={() => setHoveredTime(null)}
-                      />
-                    ))}
+                    {timeSlots.map((slot) => {
+                      const isDragSelected = dragSelections.some(
+                        (sel) => sel.dayIndex === dayIndex && sel.timeSlot === slot.time,
+                      )
+
+                      return (
+                        <div
+                          key={slot.time}
+                          className={`border-t border-zinc-100 transition-colors ${
+                            isPast
+                              ? "bg-zinc-100"
+                              : isDragSelected
+                                ? "bg-blue-500/30"
+                                : "hover:bg-zinc-50/70 cursor-pointer"
+                          }`}
+                          style={{ height: `${slot.height}px` }}
+                          onClick={() => handleSlotClick(day, slot.time)}
+                          onMouseDown={() => handleMouseDown(day, slot.time)}
+                          onMouseEnter={() => {
+                            if (!isPast) {
+                              handleCellHover(dayIndex, slot.time)
+                              handleMouseEnter(day, slot.time)
+                            }
+                          }}
+                          onMouseLeave={handleHoverLeave}
+                        />
+                      )
+                    })}
 
                     {filteredTasks
                       .filter((task) => {
@@ -276,12 +546,14 @@ export function WeeklyPlanner({
                         return format(taskDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")
                       })
                       .map((task) => {
-                        const { top, height } = getTaskPosition(task.start_time, task.end_time, weekSettings.startHour)
+                        const { top, height } = calculateTaskPosition(task.start_time, task.end_time, timeSlots)
                         return (
                           <div
                             key={task.id}
-                            className="absolute left-0 right-0"
+                            className="absolute left-0 right-0 z-30"
                             style={{ top: `${top}px`, height: `${height}px` }}
+                            onMouseEnter={() => handleTaskHover(task, dayIndex)}
+                            onMouseLeave={handleHoverLeave}
                           >
                             <TaskCard
                               task={task}

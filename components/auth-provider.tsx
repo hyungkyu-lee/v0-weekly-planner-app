@@ -33,7 +33,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data: { session },
         } = await supabase.auth.getSession()
 
-        // Set user from session (null if not logged in)
         setUser(session?.user ?? null)
 
         const {

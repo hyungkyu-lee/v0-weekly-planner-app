@@ -4,7 +4,6 @@ import type React from "react"
 
 import type { Task } from "@/lib/types"
 import { format, parseISO } from "date-fns"
-import { Check, FileText } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,9 +26,10 @@ interface TaskCardProps {
   onUpdate: (task: Task) => Promise<void>
   onDelete: (taskId: string) => Promise<void>
   onDeleteRecurringGroup: (groupId: string) => Promise<void>
+  taskHeight: number
 }
 
-export function TaskCard({ task, onUpdate, onDelete, onDeleteRecurringGroup }: TaskCardProps) {
+export function TaskCard({ task, onUpdate, onDelete, onDeleteRecurringGroup, taskHeight }: TaskCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showRecurringDeleteDialog, setShowRecurringDeleteDialog] = useState(false)
@@ -82,12 +82,64 @@ export function TaskCard({ task, onUpdate, onDelete, onDeleteRecurringGroup }: T
 
   const textColor = getTextColor(task.color)
 
+  const slotCount = Math.round(taskHeight / 27) // Updated slotCount calculation to use 27px (new HOUR_HEIGHT)
+
+  const renderTaskContent = () => {
+    const startTime = format(parseISO(task.start_time), "HH:mm")
+    const endTime = format(parseISO(task.end_time), "HH:mm")
+    const timeRange = `${startTime} ~ ${endTime}`
+
+    if (slotCount <= 1) {
+      return (
+        <div className="flex items-center justify-center h-full px-1">
+          <h4
+            className={`text-xs font-medium truncate text-center ${task.is_done ? "line-through" : ""}`}
+            style={{ color: textColor }}
+          >
+            {task.title}
+          </h4>
+        </div>
+      )
+    } else if (slotCount === 2) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-0.5 px-1">
+          <h4
+            className={`text-xs font-medium truncate text-center w-full ${task.is_done ? "line-through" : ""}`}
+            style={{ color: textColor }}
+          >
+            {task.title}
+          </h4>
+          <p className="text-[9px] opacity-75" style={{ color: textColor }}>
+            {timeRange}
+          </p>
+        </div>
+      )
+    } else {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-0.5 px-2">
+          <h4
+            className={`text-sm font-medium truncate text-center w-full ${task.is_done ? "line-through" : ""}`}
+            style={{ color: textColor }}
+          >
+            {task.title}
+          </h4>
+          <p className="text-[10px] opacity-75" style={{ color: textColor }}>
+            {timeRange}
+          </p>
+          {task.memo && (
+            <p className="text-[9px] opacity-60 line-clamp-2 text-center w-full" style={{ color: textColor }}>
+              {task.memo}
+            </p>
+          )}
+        </div>
+      )
+    }
+  }
+
   return (
     <>
-      {/* Removed rounded corners, removed padding, made it fill the entire grid cell */}
-      {/* Kept vertical borders visible by not covering them */}
       <div
-        className={`h-full w-full p-1.5 transition-all duration-200 hover:scale-[1.005] cursor-pointer border-l-2 relative ${
+        className={`h-full w-full transition-all duration-200 hover:scale-[1.005] cursor-pointer border-l-2 border-r border-zinc-200 relative ${
           task.is_done ? "opacity-60" : ""
         }`}
         style={{
@@ -97,29 +149,7 @@ export function TaskCard({ task, onUpdate, onDelete, onDeleteRecurringGroup }: T
         }}
         onClick={() => setShowDetailDialog(true)}
       >
-        <div className="flex items-start gap-1.5 h-full">
-          <button
-            onClick={handleToggleDone}
-            className={`flex-shrink-0 w-3 h-3 rounded-full border-2 flex items-center justify-center transition-colors mt-0.5`}
-            style={{
-              borderColor: textColor,
-              backgroundColor: task.is_done ? textColor : "transparent",
-            }}
-          >
-            {task.is_done && <Check className="w-1.5 h-1.5" style={{ color: task.color }} />}
-          </button>
-          <div className="flex-1 min-w-0 flex items-center justify-between">
-            <h4
-              className={`text-[10px] font-medium truncate ${task.is_done ? "line-through" : ""}`}
-              style={{ color: textColor }}
-            >
-              {task.title}
-            </h4>
-            {task.memo && (
-              <FileText className="w-2.5 h-2.5 flex-shrink-0 ml-1" style={{ color: textColor, opacity: 0.6 }} />
-            )}
-          </div>
-        </div>
+        {renderTaskContent()}
       </div>
 
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>

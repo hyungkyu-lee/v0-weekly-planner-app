@@ -7,7 +7,7 @@ import { format, parse, addDays, startOfDay, isBefore } from "date-fns"
 import { ko } from "date-fns/locale"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "./ui/button"
-import { Dialog, DialogContent, DialogFooter, DialogHeader } from "./ui/dialog"
+import { Dialog, DialogContent, DialogFooter } from "./ui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -185,6 +185,170 @@ function TimePicker({
   )
 }
 
+function DatePicker({
+  value,
+  onChange,
+}: {
+  value: Date
+  onChange: (date: Date) => void
+}) {
+  const incrementYear = () => {
+    const newDate = new Date(value)
+    newDate.setFullYear(newDate.getFullYear() + 1)
+    onChange(newDate)
+  }
+
+  const decrementYear = () => {
+    const today = startOfDay(new Date())
+    const newDate = new Date(value)
+    newDate.setFullYear(newDate.getFullYear() - 1)
+    if (!isBefore(newDate, today)) {
+      onChange(newDate)
+    }
+  }
+
+  const incrementMonth = () => {
+    const newDate = new Date(value)
+    newDate.setMonth(newDate.getMonth() + 1)
+    onChange(newDate)
+  }
+
+  const decrementMonth = () => {
+    const today = startOfDay(new Date())
+    const newDate = new Date(value)
+    newDate.setMonth(newDate.getMonth() - 1)
+    if (!isBefore(newDate, today)) {
+      onChange(newDate)
+    }
+  }
+
+  const incrementDay = () => {
+    const newDate = addDays(value, 1)
+    onChange(newDate)
+  }
+
+  const decrementDay = () => {
+    const today = startOfDay(new Date())
+    const newDate = addDays(value, -1)
+    if (!isBefore(newDate, today)) {
+      onChange(newDate)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-sm text-zinc-500">날짜</Label>
+      <div className="flex items-center gap-2">
+        {/* Year */}
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            onClick={incrementYear}
+            className="h-4 w-12 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronUp className="h-3 w-3 text-zinc-500" />
+          </button>
+          <div className="px-2 py-1 border border-zinc-200 rounded-lg bg-white">
+            <span className="text-sm font-medium">{format(value, "yyyy")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={decrementYear}
+            className="h-4 w-12 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
+        </div>
+
+        <span className="text-zinc-400">-</span>
+
+        {/* Month */}
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            onClick={incrementMonth}
+            className="h-4 w-10 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronUp className="h-3 w-3 text-zinc-500" />
+          </button>
+          <div className="px-2 py-1 border border-zinc-200 rounded-lg bg-white">
+            <span className="text-sm font-medium">{format(value, "MM")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={decrementMonth}
+            className="h-4 w-10 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
+        </div>
+
+        <span className="text-zinc-400">-</span>
+
+        {/* Day */}
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            onClick={incrementDay}
+            className="h-4 w-10 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronUp className="h-3 w-3 text-zinc-500" />
+          </button>
+          <div className="px-2 py-1 border border-zinc-200 rounded-lg bg-white">
+            <span className="text-sm font-medium">{format(value, "dd")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={decrementDay}
+            className="h-4 w-10 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
+        </div>
+
+        <span className="text-sm text-zinc-500">({format(value, "EEE", { locale: ko })})</span>
+
+        {/* Date Picker */}
+        <input
+          type="date"
+          value={format(value, "yyyy-MM-dd")}
+          onChange={(e) => {
+            const newDate = new Date(e.target.value)
+            onChange(newDate)
+          }}
+          className="h-8 w-8 opacity-0 cursor-pointer absolute"
+        />
+        <button
+          type="button"
+          className="h-8 w-8 flex items-center justify-center border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors"
+          onClick={(e) => {
+            const input = e.currentTarget.previousElementSibling as HTMLInputElement
+            if (input) input.showPicker()
+          }}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-zinc-500"
+          >
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function AddTaskDialog({
   open,
   onOpenChange,
@@ -263,18 +427,6 @@ export function AddTaskDialog({
     const dayOfWeek = format(date, "EEEE", { locale: ko })
     const dateStr = format(date, "M월 d일")
     return isRepeat ? dateStr : `${dateStr} ${dayOfWeek}`
-  }
-
-  const handleDateScroll = (e: React.WheelEvent) => {
-    e.preventDefault()
-    const today = startOfDay(new Date())
-
-    const delta = e.deltaY > 0 ? -1 : 1
-    const newDate = addDays(formData.startDate, delta)
-
-    if (!isBefore(newDate, today)) {
-      setFormData((prev) => ({ ...prev, startDate: newDate }))
-    }
   }
 
   const handleReplaceTask = async () => {
@@ -402,7 +554,6 @@ export function AddTaskDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="rounded-2xl max-w-md">
-          <DialogHeader className="text-lg font-semibold text-center">{getDisplayDateTime()}</DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -445,32 +596,10 @@ export function AddTaskDialog({
                 </div>
               ) : (
                 <>
-                  <div className="space-y-2">
-                    <Label className="text-sm text-zinc-500">날짜</Label>
-                    <div className="relative cursor-pointer" onWheel={handleDateScroll}>
-                      <Input
-                        type="text"
-                        value={`${format(formData.startDate, "yyyy-MM-dd")}(${format(formData.startDate, "EEE", { locale: ko })})`}
-                        readOnly
-                        className="rounded-lg border-zinc-200"
-                        onClick={(e) => {
-                          const input = e.currentTarget
-                          const dateInput = input.nextElementSibling as HTMLInputElement
-                          if (dateInput) dateInput.showPicker()
-                        }}
-                      />
-                      <input
-                        type="date"
-                        value={format(formData.startDate, "yyyy-MM-dd")}
-                        onChange={(e) => {
-                          const newDate = new Date(e.target.value)
-                          setFormData((prev) => ({ ...prev, startDate: newDate }))
-                        }}
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                        required
-                      />
-                    </div>
-                  </div>
+                  <DatePicker
+                    value={formData.startDate}
+                    onChange={(date) => setFormData((prev) => ({ ...prev, startDate: date }))}
+                  />
                   <div className="flex items-center justify-between py-2">
                     <Label htmlFor="mark-event" className="text-sm font-medium">
                       이벤트
