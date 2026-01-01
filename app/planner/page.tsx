@@ -93,7 +93,7 @@ export default function PlannerPage() {
       } else {
         // Replace temp task with real one
         setTasks((prev) => prev.map((t) => (t.id === tempId ? data : t)))
-        toast.success("일정이 추가되었습니다")
+        toast.success("일정이 추가되었습니다", { duration: 1500 })
       }
     } catch (err) {
       console.error("Fatal error adding task:", err)
@@ -149,7 +149,7 @@ export default function PlannerPage() {
         toast.error("일정 삭제에 실패했습니다.")
       } else {
         console.log("[v0] PlannerPage: Task deleted successfully")
-        toast.success("일정이 삭제되었습니다")
+        toast.success("일정이 삭제되었습니다", { duration: 1500 })
       }
     } catch (err) {
       console.error("[v0] PlannerPage: Fatal error deleting task:", err)
@@ -176,7 +176,7 @@ export default function PlannerPage() {
         toast.error("반복 일정 삭제에 실패했습니다.")
       } else {
         console.log("[v0] PlannerPage: Recurring group deleted successfully")
-        toast.success("반복 일정이 모두 삭제되었습니다")
+        toast.success("반복 일정이 모두 삭제되었습니다", { duration: 1500 })
       }
     } catch (err) {
       console.error("[v0] PlannerPage: Fatal error deleting recurring group:", err)
@@ -200,7 +200,7 @@ export default function PlannerPage() {
         setTasks(deletedTasks)
         toast.error("모든 일정 삭제에 실패했습니다.")
       } else {
-        toast.success("모든 일정이 삭제되었습니다")
+        toast.success("모든 일정이 삭제되었습니다", { duration: 1500 })
       }
     } catch (err) {
       console.error("Fatal error deleting all tasks:", err)

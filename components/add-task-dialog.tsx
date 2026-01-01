@@ -3,7 +3,7 @@
 import type React from "react"
 import type { Task, TaskFormData } from "@/lib/types"
 import { checkTaskOverlap } from "@/lib/utils/task-utils"
-import { format, parse, addDays } from "date-fns"
+import { format, parse, addDays, startOfDay, isBefore } from "date-fns"
 import { ko } from "date-fns/locale"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "./ui/button"
@@ -22,7 +22,7 @@ import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Textarea } from "./ui/textarea"
 import { Switch } from "./ui/switch"
-import { Checkbox } from "./ui/checkbox"
+import { ChevronUp, ChevronDown } from "lucide-react"
 import { useAuth } from "./auth-provider"
 
 interface AddTaskDialogProps {
@@ -71,6 +71,36 @@ function TimePicker({
     onChange(`${String(newHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`)
   }
 
+  const incrementHour = () => {
+    const [hours, minutes] = value.split(":").map(Number)
+    let newHour = hour + 1
+    if (newHour > 12) newHour = 1
+    const actualHour = isPM ? (newHour === 12 ? 12 : newHour + 12) : newHour === 12 ? 0 : newHour
+    onChange(`${String(actualHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`)
+  }
+
+  const decrementHour = () => {
+    const [hours, minutes] = value.split(":").map(Number)
+    let newHour = hour - 1
+    if (newHour < 1) newHour = 12
+    const actualHour = isPM ? (newHour === 12 ? 12 : newHour + 12) : newHour === 12 ? 0 : newHour
+    onChange(`${String(actualHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`)
+  }
+
+  const incrementMinute = () => {
+    const [hours, minutes] = value.split(":").map(Number)
+    let newMinute = minutes + 10
+    if (newMinute > 59) newMinute = 0
+    onChange(`${String(hours).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`)
+  }
+
+  const decrementMinute = () => {
+    const [hours, minutes] = value.split(":").map(Number)
+    let newMinute = minutes - 10
+    if (newMinute < 0) newMinute = 50
+    onChange(`${String(hours).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`)
+  }
+
   const handleHourScroll = (e: React.WheelEvent) => {
     e.preventDefault()
     const [hours, minutes] = value.split(":").map(Number)
@@ -86,9 +116,9 @@ function TimePicker({
   const handleMinuteScroll = (e: React.WheelEvent) => {
     e.preventDefault()
     const [hours, minutes] = value.split(":").map(Number)
-    const delta = e.deltaY > 0 ? -5 : 5
+    const delta = e.deltaY > 0 ? -10 : 10
     let newMinute = minutes + delta
-    if (newMinute < 0) newMinute = 55
+    if (newMinute < 0) newMinute = 50
     if (newMinute > 59) newMinute = 0
 
     onChange(`${String(hours).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`)
@@ -105,18 +135,50 @@ function TimePicker({
         >
           {isPM ? "오후" : "오전"}
         </button>
-        <div
-          className="flex items-center gap-1 px-3 py-2 border border-zinc-200 rounded-lg bg-white cursor-pointer select-none hover:bg-zinc-50"
-          onWheel={handleHourScroll}
-        >
-          <span className="text-base font-medium w-6 text-center">{String(hour).padStart(2, "0")}</span>
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            onClick={incrementHour}
+            className="h-4 w-8 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronUp className="h-3 w-3 text-zinc-500" />
+          </button>
+          <div
+            className="flex items-center gap-1 px-3 py-1 border border-zinc-200 rounded-lg bg-white cursor-pointer select-none hover:bg-zinc-50"
+            onWheel={handleHourScroll}
+          >
+            <span className="text-base font-medium w-6 text-center">{String(hour).padStart(2, "0")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={decrementHour}
+            className="h-4 w-8 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
         </div>
         <span className="text-zinc-400">:</span>
-        <div
-          className="flex items-center gap-1 px-3 py-2 border border-zinc-200 rounded-lg bg-white cursor-pointer select-none hover:bg-zinc-50"
-          onWheel={handleMinuteScroll}
-        >
-          <span className="text-base font-medium w-6 text-center">{String(minute).padStart(2, "0")}</span>
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            onClick={incrementMinute}
+            className="h-4 w-8 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronUp className="h-3 w-3 text-zinc-500" />
+          </button>
+          <div
+            className="flex items-center gap-1 px-3 py-1 border border-zinc-200 rounded-lg bg-white cursor-pointer select-none hover:bg-zinc-50"
+            onWheel={handleMinuteScroll}
+          >
+            <span className="text-base font-medium w-6 text-center">{String(minute).padStart(2, "0")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={decrementMinute}
+            className="h-4 w-8 flex items-center justify-center hover:bg-zinc-100 rounded transition-colors"
+          >
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
         </div>
       </div>
     </div>
@@ -133,6 +195,7 @@ export function AddTaskDialog({
 }: AddTaskDialogProps) {
   const { user } = useAuth()
   const titleInputRef = useRef<HTMLInputElement>(null)
+  const memoTextareaRef = useRef<HTMLTextAreaElement>(null)
   const [formData, setFormData] = useState<TaskFormData>({
     title: "",
     startDate: initialDate,
@@ -204,15 +267,60 @@ export function AddTaskDialog({
 
   const handleDateScroll = (e: React.WheelEvent) => {
     e.preventDefault()
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const today = startOfDay(new Date())
 
     const delta = e.deltaY > 0 ? -1 : 1
     const newDate = addDays(formData.startDate, delta)
 
-    if (newDate >= today) {
+    if (!isBefore(newDate, today)) {
       setFormData((prev) => ({ ...prev, startDate: newDate }))
     }
+  }
+
+  const handleReplaceTask = async () => {
+    if (!conflictTask || pendingTasks.length === 0) return
+
+    for (const task of pendingTasks) {
+      await onTaskAdd(task)
+    }
+
+    setConflictTask(null)
+    setPendingTasks([])
+    onOpenChange(false)
+    resetForm()
+  }
+
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      startDate: initialDate,
+      startTime: initialTime,
+      endTime: format(parse(initialTime, "HH:mm", new Date()).getTime() + 60 * 60 * 1000, "HH:mm"),
+      memo: "",
+      taskType: "task",
+      eventDate: initialDate,
+      repeatDays: [],
+      skipHolidays: false,
+    })
+    setIsRepeat(false)
+    setMarkAsEvent(false)
+    setSelectedColor(TASK_COLORS[0].value)
+  }
+
+  const toggleRepeatDay = (dayIndex: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      repeatDays: prev.repeatDays.includes(dayIndex)
+        ? prev.repeatDays.filter((d) => d !== dayIndex)
+        : [...prev.repeatDays, dayIndex],
+    }))
+  }
+
+  const handleColorSelect = (color: string) => {
+    setSelectedColor(color)
+    setTimeout(() => {
+      memoTextareaRef.current?.focus()
+    }, 50)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -290,45 +398,6 @@ export function AddTaskDialog({
     resetForm()
   }
 
-  const handleReplaceTask = async () => {
-    if (!conflictTask || pendingTasks.length === 0) return
-
-    for (const task of pendingTasks) {
-      await onTaskAdd(task)
-    }
-
-    setConflictTask(null)
-    setPendingTasks([])
-    onOpenChange(false)
-    resetForm()
-  }
-
-  const resetForm = () => {
-    setFormData({
-      title: "",
-      startDate: initialDate,
-      startTime: initialTime,
-      endTime: format(parse(initialTime, "HH:mm", new Date()).getTime() + 60 * 60 * 1000, "HH:mm"),
-      memo: "",
-      taskType: "task",
-      eventDate: initialDate,
-      repeatDays: [],
-      skipHolidays: false,
-    })
-    setIsRepeat(false)
-    setMarkAsEvent(false)
-    setSelectedColor(TASK_COLORS[0].value)
-  }
-
-  const toggleRepeatDay = (dayIndex: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      repeatDays: prev.repeatDays.includes(dayIndex)
-        ? prev.repeatDays.filter((d) => d !== dayIndex)
-        : [...prev.repeatDays, dayIndex],
-    }))
-  }
-
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -380,28 +449,36 @@ export function AddTaskDialog({
                     <Label className="text-sm text-zinc-500">날짜</Label>
                     <div className="relative cursor-pointer" onWheel={handleDateScroll}>
                       <Input
+                        type="text"
+                        value={`${format(formData.startDate, "yyyy-MM-dd")}(${format(formData.startDate, "EEE", { locale: ko })})`}
+                        readOnly
+                        className="rounded-lg border-zinc-200"
+                        onClick={(e) => {
+                          const input = e.currentTarget
+                          const dateInput = input.nextElementSibling as HTMLInputElement
+                          if (dateInput) dateInput.showPicker()
+                        }}
+                      />
+                      <input
                         type="date"
                         value={format(formData.startDate, "yyyy-MM-dd")}
                         onChange={(e) => {
                           const newDate = new Date(e.target.value)
                           setFormData((prev) => ({ ...prev, startDate: newDate }))
                         }}
-                        className="rounded-lg border-zinc-200 pr-16"
+                        className="absolute inset-0 opacity-0 cursor-pointer"
                         required
                       />
-                      <div className="absolute right-10 top-1/2 -translate-y-1/2 text-sm text-zinc-500 pointer-events-none">
-                        ({format(formData.startDate, "EEE", { locale: ko })})
-                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center justify-between py-2">
                     <Label htmlFor="mark-event" className="text-sm font-medium">
-                      중요 일정 표시
+                      이벤트
                     </Label>
-                    <Checkbox
+                    <Switch
                       id="mark-event"
                       checked={markAsEvent}
-                      onCheckedChange={(checked) => setMarkAsEvent(checked === true)}
+                      onCheckedChange={(checked) => setMarkAsEvent(checked)}
                     />
                   </div>
                 </>
@@ -423,7 +500,7 @@ export function AddTaskDialog({
                     <button
                       key={color.value}
                       type="button"
-                      onClick={() => setSelectedColor(color.value)}
+                      onClick={() => handleColorSelect(color.value)}
                       className={`w-9 h-9 rounded-full transition-all ${
                         selectedColor === color.value ? "ring-2 ring-zinc-900 ring-offset-2" : ""
                       }`}
@@ -437,6 +514,7 @@ export function AddTaskDialog({
               <div className="space-y-2">
                 <Label className="text-sm text-zinc-500">메모</Label>
                 <Textarea
+                  ref={memoTextareaRef}
                   placeholder="메모를 입력하세요"
                   value={formData.memo}
                   onChange={(e) => setFormData((prev) => ({ ...prev, memo: e.target.value }))}

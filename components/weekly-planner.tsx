@@ -46,6 +46,7 @@ export function WeeklyPlanner({
   const [weekSettings, setWeekSettings] = useState<WeekSettings>({ startHour: 8, endHour: 23 })
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("weekly")
+  const [hoveredTime, setHoveredTime] = useState<string | null>(null)
 
   const formatTime24Hour = (time24: string) => {
     return time24
@@ -151,14 +152,14 @@ export function WeeklyPlanner({
 
         {/* Center Group - Date Navigation */}
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={goToPrevious} className="h-8 w-8">
-            <ChevronLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" onClick={goToPrevious} className="h-10 w-10">
+            <ChevronLeft className="h-6 w-6" />
           </Button>
           <div className="text-sm font-semibold text-zinc-900 min-w-[140px] text-center">
             {viewMode === "weekly" ? formatYearMonthWeek(currentWeekStart) : formatYearMonth(currentMonth)}
           </div>
-          <Button variant="ghost" size="icon" onClick={goToNext} className="h-8 w-8">
-            <ChevronRight className="h-5 w-5" />
+          <Button variant="ghost" size="icon" onClick={goToNext} className="h-10 w-10">
+            <ChevronRight className="h-6 w-6" />
           </Button>
         </div>
 
@@ -236,7 +237,9 @@ export function WeeklyPlanner({
                 {timeSlots.map((time) => (
                   <div
                     key={time}
-                    className="flex items-center justify-center text-[10px] text-zinc-400 border-t border-zinc-100"
+                    className={`flex items-center justify-center text-xs border-t border-zinc-100 transition-colors ${
+                      hoveredTime === time ? "text-zinc-900 font-bold" : "text-zinc-400 font-medium"
+                    }`}
                     style={{ height: `${HOUR_HEIGHT / 2}px` }}
                   >
                     {formatTime24Hour(time)}
@@ -258,10 +261,12 @@ export function WeeklyPlanner({
                       <div
                         key={time}
                         className={`border-t border-zinc-100 transition-colors ${
-                          isPast ? "bg-zinc-50/50 cursor-not-allowed" : "hover:bg-zinc-50/70 cursor-pointer"
+                          isPast ? "bg-zinc-100" : "hover:bg-zinc-50/70 cursor-pointer"
                         }`}
                         style={{ height: `${HOUR_HEIGHT / 2}px` }}
                         onClick={() => handleSlotClick(day, time)}
+                        onMouseEnter={() => !isPast && setHoveredTime(time)}
+                        onMouseLeave={() => setHoveredTime(null)}
                       />
                     ))}
 
