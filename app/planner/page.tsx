@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { Task } from "@/lib/types"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 
 export default function PlannerPage() {
   const { user, loading, signOut } = useAuth()
@@ -70,15 +71,33 @@ export default function PlannerPage() {
   const handleTaskAdd = async (task: Omit<Task, "id" | "created_at" | "updated_at">) => {
     try {
       const supabase = createClient()
-      const { error } = await supabase.from("tasks").insert(task)
+
+      // Optimistic update: add temporary task to UI immediately
+      const tempId = `temp-${Date.now()}`
+      const tempTask = {
+        ...task,
+        id: tempId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Task
+
+      setTasks((prev) => [...prev, tempTask])
+
+      const { data, error } = await supabase.from("tasks").insert(task).select().single()
 
       if (error) {
+        // Rollback on error
+        setTasks((prev) => prev.filter((t) => t.id !== tempId))
         console.error("Error adding task:", error)
-        alert("일정 추가에 실패했습니다: " + error.message)
+        toast.error("일정 추가에 실패했습니다: " + error.message)
+      } else {
+        // Replace temp task with real one
+        setTasks((prev) => prev.map((t) => (t.id === tempId ? data : t)))
+        toast.success("일정이 추가되었습니다")
       }
     } catch (err) {
       console.error("Fatal error adding task:", err)
-      alert("일정 추가 중 오류가 발생했습니다.")
+      toast.error("일정 추가 중 오류가 발생했습니다.")
     }
   }
 
@@ -111,15 +130,26 @@ export default function PlannerPage() {
 
   const handleTaskDelete = async (taskId: string) => {
     try {
+      // Optimistic update: remove task from UI immediately
+      const deletedTask = tasks.find((t) => t.id === taskId)
+      setTasks((prev) => prev.filter((t) => t.id !== taskId))
+
       const supabase = createClient()
       const { error } = await supabase.from("tasks").delete().eq("id", taskId)
 
       if (error) {
+        // Rollback on error
+        if (deletedTask) {
+          setTasks((prev) => [...prev, deletedTask])
+        }
         console.error("Error deleting task:", error)
-        alert("일정 삭제에 실패했습니다.")
+        toast.error("일정 삭제에 실패했습니다.")
+      } else {
+        toast.success("일정이 삭제되었습니다")
       }
     } catch (err) {
       console.error("Fatal error deleting task:", err)
+      toast.error("일정 삭제 중 오류가 발생했습니다.")
     }
   }
 

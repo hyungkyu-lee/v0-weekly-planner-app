@@ -7,7 +7,7 @@ import { format, parse, addDays } from "date-fns"
 import { ko } from "date-fns/locale"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "./ui/button"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader } from "./ui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -222,9 +222,7 @@ export function AddTaskDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="rounded-2xl max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-medium text-zinc-500">{getDisplayDateTime()}</DialogTitle>
-          </DialogHeader>
+          <DialogHeader>{getDisplayDateTime()}</DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">

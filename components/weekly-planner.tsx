@@ -3,11 +3,13 @@
 import type { Task, WeekSettings } from "@/lib/types"
 import { getTaskPosition } from "@/lib/utils/task-utils"
 import { checkIsHoliday } from "@/lib/utils/holidays"
-import { format, addDays, startOfWeek, isBefore, startOfDay, isToday } from "date-fns"
+import { formatYearMonthWeek, formatYearMonth } from "@/lib/utils/week-utils"
+import { format, addDays, startOfWeek, isBefore, startOfDay, isToday, addMonths, startOfMonth } from "date-fns"
 import { ko } from "date-fns/locale"
 import { useState, useEffect } from "react"
 import { TaskCard } from "./task-card"
 import { AddTaskDialog } from "./add-task-dialog"
+import { MonthlyView } from "./monthly-view"
 import { Button } from "./ui/button"
 import { ChevronLeft, ChevronRight, Plus, Settings, LogOut } from "lucide-react"
 import { WeekSettingsDialog } from "./week-settings-dialog"
@@ -24,6 +26,7 @@ type ViewMode = "weekly" | "monthly"
 
 export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, onSignOut }: WeeklyPlannerProps) {
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
+  const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()))
   const [isHeaderVisible, setIsHeaderVisible] = useState(true)
   const [scrollTimeout, setScrollTimeout] = useState<NodeJS.Timeout | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<{
@@ -34,14 +37,11 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("weekly")
 
-  const formatTime12Hour = (time24: string) => {
-    const [hour, minute] = time24.split(":")
-    const hourNum = Number.parseInt(hour)
-    const period = hourNum >= 12 ? "오후" : "오전"
-    const hour12 = hourNum === 0 ? 12 : hourNum > 12 ? hourNum - 12 : hourNum
-    return `${period} ${hour12}:${minute}`
+  const formatTime24Hour = (time24: string) => {
+    return time24
   }
 
+  const HOUR_HEIGHT = 64
   const timeSlots = Array.from({ length: (weekSettings.endHour - weekSettings.startHour + 1) * 2 }, (_, i) => {
     const hour = Math.floor(i / 2) + weekSettings.startHour
     const minute = i % 2 === 0 ? "00" : "30"
@@ -80,16 +80,31 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
     setSelectedSlot({ date, time })
   }
 
-  const goToPreviousWeek = () => {
-    setCurrentWeekStart((prev) => addDays(prev, -7))
+  const goToPrevious = () => {
+    if (viewMode === "weekly") {
+      setCurrentWeekStart((prev) => addDays(prev, -7))
+    } else {
+      setCurrentMonth((prev) => addMonths(prev, -1))
+    }
   }
 
-  const goToNextWeek = () => {
-    setCurrentWeekStart((prev) => addDays(prev, 7))
+  const goToNext = () => {
+    if (viewMode === "weekly") {
+      setCurrentWeekStart((prev) => addDays(prev, 7))
+    } else {
+      setCurrentMonth((prev) => addMonths(prev, 1))
+    }
   }
 
   const goToToday = () => {
     setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))
+    setCurrentMonth(startOfMonth(new Date()))
+  }
+
+  const handleDayClick = (date: Date) => {
+    const weekStart = startOfWeek(date, { weekStartsOn: 1 })
+    setCurrentWeekStart(weekStart)
+    setViewMode("weekly")
   }
 
   const filteredTasks = viewMode === "monthly" ? tasks.filter((task) => task.task_type === "event") : tasks
@@ -117,21 +132,29 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
               월간
             </button>
           </div>
-          <Button variant="ghost" size="icon" onClick={goToPreviousWeek} className="h-8 w-8">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={goToNextWeek} className="h-8 w-8">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
           <Button variant="outline" size="sm" onClick={goToToday} className="h-8 text-xs bg-transparent">
             오늘
           </Button>
         </div>
 
+        {/* Center Group - Date Navigation */}
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={goToPrevious} className="h-8 w-8">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="text-sm font-semibold text-zinc-900 min-w-[140px] text-center">
+            {viewMode === "weekly" ? formatYearMonthWeek(currentWeekStart) : formatYearMonth(currentMonth)}
+          </div>
+          <Button variant="ghost" size="icon" onClick={goToNext} className="h-8 w-8">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
         {/* Right Group */}
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setShowSettingsDialog(true)} className="h-8 w-8">
-            <Settings className="h-4 w-4" />
+          <Button variant="ghost" size="sm" onClick={() => setShowSettingsDialog(true)} className="h-8 gap-1.5">
+            <Settings className="h-3.5 w-3.5" />
+            설정
           </Button>
           <Button
             onClick={() => setSelectedSlot({ date: new Date(), time: "09:00" })}
@@ -148,106 +171,112 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto" onScroll={handleScroll}>
-        <div className="relative">
-          {/* Day Header Row with vertical lines */}
-          <div
-            className="sticky top-0 z-40 bg-white border-b border-zinc-200 grid"
-            style={{ gridTemplateColumns: "60px repeat(7, 1fr)" }}
-          >
-            <div className="border-r border-zinc-100" />
-            {weekDays.map((day) => {
-              const isPast = isBefore(startOfDay(day), startOfDay(new Date()))
-              const isTodayDate = isToday(day)
-              const isHoliday = checkIsHoliday(day)
+      {viewMode === "monthly" ? (
+        <MonthlyView currentMonth={currentMonth} tasks={filteredTasks} onDayClick={handleDayClick} />
+      ) : (
+        <div className="flex-1 overflow-auto" onScroll={handleScroll}>
+          <div className="relative">
+            {/* Day Header Row */}
+            <div
+              className="sticky top-0 z-40 bg-white border-b border-zinc-200 grid"
+              style={{ gridTemplateColumns: "80px repeat(7, 1fr)" }}
+            >
+              <div className="border-r border-zinc-100" />
+              {weekDays.map((day) => {
+                const isPast = isBefore(startOfDay(day), startOfDay(new Date()))
+                const isTodayDate = isToday(day)
+                const isHoliday = checkIsHoliday(day)
 
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={`text-center py-3 border-r border-zinc-100 ${isHoliday ? "bg-red-50/30" : ""}`}
-                >
+                return (
                   <div
-                    className={`text-xs font-medium ${
-                      isHoliday ? "text-red-500" : isPast ? "text-zinc-300" : "text-zinc-500"
-                    }`}
+                    key={day.toISOString()}
+                    className={`text-center py-3 border-r border-zinc-100 ${isHoliday ? "bg-red-50/30" : ""}`}
                   >
-                    {format(day, "EEE", { locale: ko })}
-                  </div>
-                  {isTodayDate ? (
-                    <div className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-zinc-900 mt-1">
-                      <div className="text-base font-semibold text-white">{format(day, "d")}</div>
-                    </div>
-                  ) : (
                     <div
-                      className={`text-base font-semibold mt-1 ${
-                        isHoliday ? "text-red-500" : isPast ? "text-zinc-300" : "text-zinc-900"
+                      className={`text-xs font-medium ${
+                        isHoliday ? "text-red-500" : isPast ? "text-zinc-300" : "text-zinc-500"
                       }`}
                     >
-                      {format(day, "d")}
+                      {format(day, "EEE", { locale: ko })}
                     </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Time Grid Body with same column structure */}
-          <div className="grid" style={{ gridTemplateColumns: "60px repeat(7, 1fr)" }}>
-            {/* Time Column */}
-            <div className="sticky left-0 bg-white z-10 border-r border-zinc-100">
-              {timeSlots.map((time) => (
-                <div
-                  key={time}
-                  className="h-12 flex items-start justify-end pr-3 pt-1 text-xs text-zinc-400 border-t border-zinc-100"
-                >
-                  {formatTime12Hour(time)}
-                </div>
-              ))}
+                    {isTodayDate ? (
+                      <div className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-zinc-900 mt-1">
+                        <div className="text-base font-semibold text-white">{format(day, "d")}</div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`text-base font-semibold mt-1 ${
+                          isHoliday ? "text-red-500" : isPast ? "text-zinc-300" : "text-zinc-900"
+                        }`}
+                      >
+                        {format(day, "d")}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
-            {/* Day Columns */}
-            {weekDays.map((day) => {
-              const isPast = isBefore(startOfDay(day), startOfDay(new Date()))
-              const isHoliday = checkIsHoliday(day)
+            {/* Time Grid Body */}
+            <div className="grid" style={{ gridTemplateColumns: "80px repeat(7, 1fr)" }}>
+              {/* Time Column */}
+              <div className="sticky left-0 bg-white z-10 border-r border-zinc-100">
+                {timeSlots.map((time) => (
+                  <div
+                    key={time}
+                    className="flex items-start justify-end pr-4 pt-1 text-xs text-zinc-400 border-t border-zinc-100"
+                    style={{ height: `${HOUR_HEIGHT / 2}px` }}
+                  >
+                    {formatTime24Hour(time)}
+                  </div>
+                ))}
+              </div>
 
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={`relative border-r border-zinc-100 ${isHoliday ? "bg-red-50/30" : ""}`}
-                >
-                  {timeSlots.map((time) => (
-                    <div
-                      key={time}
-                      className={`h-12 border-t border-zinc-100 transition-colors ${
-                        isPast ? "bg-zinc-50/50 cursor-not-allowed" : "hover:bg-zinc-50 cursor-pointer"
-                      }`}
-                      onClick={() => handleSlotClick(day, time)}
-                    />
-                  ))}
+              {/* Day Columns */}
+              {weekDays.map((day) => {
+                const isPast = isBefore(startOfDay(day), startOfDay(new Date()))
+                const isHoliday = checkIsHoliday(day)
 
-                  {filteredTasks
-                    .filter((task) => {
-                      const taskDate = new Date(task.start_time)
-                      return format(taskDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")
-                    })
-                    .map((task) => {
-                      const { top, height } = getTaskPosition(task.start_time, task.end_time, weekSettings.startHour)
-                      return (
-                        <div
-                          key={task.id}
-                          className="absolute left-1 right-1"
-                          style={{ top: `${top}px`, height: `${height}px` }}
-                        >
-                          <TaskCard task={task} onUpdate={onTaskUpdate} onDelete={onTaskDelete} />
-                        </div>
-                      )
-                    })}
-                </div>
-              )
-            })}
+                return (
+                  <div
+                    key={day.toISOString()}
+                    className={`relative border-r border-zinc-100 ${isHoliday ? "bg-red-50/30" : ""}`}
+                  >
+                    {timeSlots.map((time) => (
+                      <div
+                        key={time}
+                        className={`border-t border-zinc-100 transition-colors ${
+                          isPast ? "bg-zinc-50/50 cursor-not-allowed" : "hover:bg-zinc-50 cursor-pointer"
+                        }`}
+                        style={{ height: `${HOUR_HEIGHT / 2}px` }}
+                        onClick={() => handleSlotClick(day, time)}
+                      />
+                    ))}
+
+                    {filteredTasks
+                      .filter((task) => {
+                        const taskDate = new Date(task.start_time)
+                        return format(taskDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")
+                      })
+                      .map((task) => {
+                        const { top, height } = getTaskPosition(task.start_time, task.end_time, weekSettings.startHour)
+                        return (
+                          <div
+                            key={task.id}
+                            className="absolute left-1 right-1"
+                            style={{ top: `${top}px`, height: `${height}px` }}
+                          >
+                            <TaskCard task={task} onUpdate={onTaskUpdate} onDelete={onTaskDelete} />
+                          </div>
+                        )
+                      })}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {selectedSlot && (
         <AddTaskDialog

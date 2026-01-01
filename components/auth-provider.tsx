@@ -27,26 +27,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        console.log("[v0] AuthProvider: Initializing Supabase client")
         const supabase = createClient()
 
-        console.log("[v0] AuthProvider: Getting user")
         const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser()
+          data: { session },
+        } = await supabase.auth.getSession()
 
-        if (userError) {
-          console.error("[v0] AuthProvider: Error getting user:", userError)
-        } else {
-          console.log("[v0] AuthProvider: User:", user ? `✓ Logged in as ${user.email}` : "✗ Not logged in")
-          setUser(user)
-        }
+        // Set user from session (null if not logged in)
+        setUser(session?.user ?? null)
 
         const {
           data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {
-          console.log("[v0] AuthProvider: Auth state changed:", session?.user ? "User logged in" : "User logged out")
           setUser(session?.user ?? null)
         })
 
