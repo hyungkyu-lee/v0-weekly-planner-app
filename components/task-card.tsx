@@ -29,6 +29,7 @@ interface TaskCardProps {
 export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showDetailDialog, setShowDetailDialog] = useState(false)
+  const [showRecurringDeleteDialog, setShowRecurringDeleteDialog] = useState(false)
 
   const handleToggleDone = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -39,6 +40,22 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
     await onDelete(task.id)
     setShowDeleteDialog(false)
     setShowDetailDialog(false)
+  }
+
+  const handleDeleteAllRecurring = async () => {
+    if (task.group_id) {
+      await onDelete(task.group_id)
+    }
+    setShowRecurringDeleteDialog(false)
+    setShowDetailDialog(false)
+  }
+
+  const handleDeleteClick = () => {
+    if (task.task_type === "routine" && task.group_id) {
+      setShowRecurringDeleteDialog(true)
+    } else {
+      setShowDeleteDialog(true)
+    }
   }
 
   const getTextColor = (bgColor: string) => {
@@ -55,11 +72,13 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
   return (
     <>
       <div
-        className={`h-full rounded-md p-1.5 transition-all duration-200 hover:scale-[1.02] cursor-pointer ${
+        className={`h-full rounded-sm p-1.5 transition-all duration-200 hover:scale-[1.01] cursor-pointer border-l-2 ${
           task.is_done ? "opacity-60" : ""
         }`}
         style={{
           backgroundColor: task.color,
+          borderLeftColor: task.color,
+          filter: "brightness(0.95)",
         }}
         onClick={() => setShowDetailDialog(true)}
       >
@@ -107,8 +126,8 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setShowDeleteDialog(true)}
-              className="rounded-lg border-red-200 text-red-600 hover:bg-red-50"
+              onClick={handleDeleteClick}
+              className="rounded-lg border-red-200 text-red-600 hover:bg-red-50 bg-transparent"
             >
               <Trash2 className="h-4 w-4 mr-2" />
               삭제
@@ -120,16 +139,27 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <AlertDialog open={showRecurringDeleteDialog} onOpenChange={setShowRecurringDeleteDialog}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>일정을 삭제하시겠습니까?</AlertDialogTitle>
-            <AlertDialogDescription>이 작업은 취소할 수 없습니다.</AlertDialogDescription>
+            <AlertDialogTitle>반복 일정 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              이 일정만 삭제하시겠습니까, 아니면 앞으로의 모든 일정을 삭제하시겠습니까?
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="rounded-lg">취소</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="rounded-lg bg-red-500 hover:bg-red-600">
-              삭제
+            <AlertDialogAction
+              onClick={() => {
+                handleDelete()
+                setShowRecurringDeleteDialog(false)
+              }}
+              className="rounded-lg bg-zinc-900 hover:bg-zinc-800"
+            >
+              이 일정만 삭제
+            </AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteAllRecurring} className="rounded-lg bg-red-500 hover:bg-red-600">
+              모두 삭제
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

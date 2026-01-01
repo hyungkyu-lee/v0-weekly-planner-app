@@ -4,6 +4,7 @@ import type { Task } from "@/lib/types"
 import { getMonthCalendarDays } from "@/lib/utils/week-utils"
 import { checkIsHoliday } from "@/lib/utils/holidays"
 import { format, isSameMonth, isToday, isSameDay } from "date-fns"
+import { FileText } from "lucide-react"
 
 interface MonthlyViewProps {
   currentMonth: Date
@@ -73,12 +74,21 @@ export function MonthlyView({ currentMonth, tasks, onDayClick }: MonthlyViewProp
                   </div>
 
                   {/* Event Dots */}
-                  <div className="flex-1 flex flex-col gap-1 overflow-hidden">
-                    {dayTasks.slice(0, 3).map((task) => (
-                      <div key={task.id} className="h-1.5 rounded-full" style={{ backgroundColor: task.color }} />
+                  <div className="flex-1 flex flex-col gap-0.5 overflow-hidden">
+                    {dayTasks.slice(0, 4).map((task) => (
+                      <div
+                        key={task.id}
+                        className="flex items-center gap-1 px-1 py-0.5 rounded text-xs truncate"
+                        style={{ backgroundColor: task.color }}
+                      >
+                        <span className="font-medium truncate" style={{ color: "#18181b" }}>
+                          {format(new Date(task.start_time), "HH:mm")} {task.title}
+                        </span>
+                        {task.memo && <FileText className="w-2.5 h-2.5 flex-shrink-0" style={{ color: "#18181b" }} />}
+                      </div>
                     ))}
-                    {dayTasks.length > 3 && (
-                      <div className="text-[10px] text-zinc-400 mt-0.5">+{dayTasks.length - 3}</div>
+                    {dayTasks.length > 4 && (
+                      <div className="text-[10px] text-zinc-500 px-1">+{dayTasks.length - 4} more</div>
                     )}
                   </div>
                 </div>

@@ -10,6 +10,7 @@ export interface Task {
   task_type: "event" | "routine" | "task" // event = important, routine = recurring, task = single
   event_date?: string | null // For event type tasks
   repeat_days?: number[] // For routine type tasks (0=Monday, 6=Sunday)
+  group_id?: string | null // Added for recurring task deletion logic
   created_at?: string
   updated_at?: string
 }

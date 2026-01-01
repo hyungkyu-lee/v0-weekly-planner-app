@@ -109,6 +109,8 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
 
   const filteredTasks = viewMode === "monthly" ? tasks.filter((task) => task.task_type === "event") : tasks
 
+  const SIDEBAR_WIDTH = "96px"
+
   return (
     <div className="h-full flex flex-col bg-white w-full">
       <div className="h-14 border-b border-zinc-200 flex items-center justify-between px-4">
@@ -179,7 +181,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
             {/* Day Header Row */}
             <div
               className="sticky top-0 z-40 bg-white border-b border-zinc-200 grid"
-              style={{ gridTemplateColumns: "80px repeat(7, 1fr)" }}
+              style={{ gridTemplateColumns: `${SIDEBAR_WIDTH} repeat(7, 1fr)` }}
             >
               <div className="border-r border-zinc-100" />
               {weekDays.map((day) => {
@@ -218,13 +220,13 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
             </div>
 
             {/* Time Grid Body */}
-            <div className="grid" style={{ gridTemplateColumns: "80px repeat(7, 1fr)" }}>
+            <div className="grid" style={{ gridTemplateColumns: `${SIDEBAR_WIDTH} repeat(7, 1fr)` }}>
               {/* Time Column */}
               <div className="sticky left-0 bg-white z-10 border-r border-zinc-100">
                 {timeSlots.map((time) => (
                   <div
                     key={time}
-                    className="flex items-start justify-end pr-4 pt-1 text-xs text-zinc-400 border-t border-zinc-100"
+                    className="flex items-start justify-center pt-1 text-xs text-zinc-400 border-t border-zinc-100"
                     style={{ height: `${HOUR_HEIGHT / 2}px` }}
                   >
                     {formatTime24Hour(time)}
@@ -246,7 +248,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
                       <div
                         key={time}
                         className={`border-t border-zinc-100 transition-colors ${
-                          isPast ? "bg-zinc-50/50 cursor-not-allowed" : "hover:bg-zinc-50 cursor-pointer"
+                          isPast ? "bg-zinc-50/50 cursor-not-allowed" : "hover:bg-zinc-50/70 cursor-pointer"
                         }`}
                         style={{ height: `${HOUR_HEIGHT / 2}px` }}
                         onClick={() => handleSlotClick(day, time)}
@@ -263,7 +265,7 @@ export function WeeklyPlanner({ tasks, onTaskUpdate, onTaskDelete, onTaskAdd, on
                         return (
                           <div
                             key={task.id}
-                            className="absolute left-1 right-1"
+                            className="absolute left-0 right-0 px-0.5"
                             style={{ top: `${top}px`, height: `${height}px` }}
                           >
                             <TaskCard task={task} onUpdate={onTaskUpdate} onDelete={onTaskDelete} />
